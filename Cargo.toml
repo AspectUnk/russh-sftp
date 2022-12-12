@@ -5,7 +5,7 @@ edition = "2021"
 description = "SFTP subsystem supported server and client for Russh"
 readme = "README.md"
 repository = "https://github.com/AspectUnk/russh-sftp"
-license-file = "LICENSE"
+license = "Apache-2.0"
 keywords = ["russh", "sftp", "ssh2", "server", "client"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
