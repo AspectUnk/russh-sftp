@@ -1,7 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
 use super::impl_packet_for;
-use crate::{buf::TryBuf, server, PROTOCOL_VERSION, error};
+use crate::{buf::TryBuf, error, protocol, server};
 
 pub type Version = Init;
 
@@ -14,7 +14,7 @@ pub struct Init {
 impl Init {
     pub fn new() -> Self {
         Self {
-            version: PROTOCOL_VERSION,
+            version: protocol::VERSION,
         }
     }
 }

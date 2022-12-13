@@ -5,7 +5,7 @@ use russh::{
     Channel, ChannelId,
 };
 use russh_keys::key::KeyPair;
-use russh_sftp::{packet, server::Packet};
+use russh_sftp::protocol::{StatusCode, Version};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
@@ -80,11 +80,15 @@ struct SftpSession {}
 
 #[async_trait]
 impl russh_sftp::server::Handler for SftpSession {
-    type Error = russh_sftp::ErrorProtocol;
+    type Error = StatusCode;
 
-    async fn init(&mut self, init: packet::Init) -> Result<Packet, Self::Error> {
-        info!("version: {:?}", init.version);
-        Ok(packet::Version::new().into())
+    fn unimplemented(self) -> Self::Error {
+        StatusCode::OpUnsupported
+    }
+
+    async fn init(self, version: u32) -> Result<Version, Self::Error> {
+        info!("version: {:?}", version);
+        Ok(Version::new())
     }
 }
 
