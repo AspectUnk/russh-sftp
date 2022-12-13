@@ -1,6 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{buf::TryBuf, Error, PROTOCOL_VERSION};
+use super::impl_packet_for;
+use crate::{buf::TryBuf, server, PROTOCOL_VERSION, error};
 
 pub type Version = Init;
 
@@ -18,8 +19,10 @@ impl Init {
     }
 }
 
-impl From<&Init> for Bytes {
-    fn from(packet: &Init) -> Self {
+impl_packet_for!(Version, server::Packet);
+
+impl From<Init> for Bytes {
+    fn from(packet: Init) -> Self {
         let mut bytes = BytesMut::new();
         bytes.put_u32(packet.version);
         bytes.freeze()
@@ -27,7 +30,7 @@ impl From<&Init> for Bytes {
 }
 
 impl TryFrom<&mut Bytes> for Init {
-    type Error = Error;
+    type Error = error::Error;
 
     fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -44,8 +47,7 @@ mod test_init_packet {
 
     #[test]
     fn test_bytes_from_init() {
-        let packet = &Init { version: 3 };
-        let bytes: Bytes = packet.into();
+        let bytes: Bytes = Init { version: 3 }.into();
         assert_eq!(&bytes.to_vec(), &[0x00, 0x00, 0x00, 0x03]);
     }
 

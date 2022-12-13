@@ -8,14 +8,14 @@ pub enum Error {
     UnexpectedEof,
     #[error("{0}")]
     Internal(String),
+    #[error("{0}")]
+    Custom(String),
 }
 
 impl Error {
-    pub(crate) fn from(error: std::io::Error) -> Self {
-        let kind = error.kind();
-        let msg = error
-            .into_inner()
-            .map_or("".to_string(), |m| format!("{m}"));
+    pub fn from(err: std::io::Error) -> Self {
+        let kind = err.kind();
+        let msg = err.into_inner().map_or("".to_string(), |m| format!("{m}"));
 
         match kind {
             std::io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
@@ -24,24 +24,36 @@ impl Error {
     }
 }
 
-#[derive(Debug, Error)]
+impl From<ErrorProtocol> for Error {
+    fn from(err: ErrorProtocol) -> Self {
+        Self::Protocol(err)
+    }
+}
+
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Self {
+        Self::Internal(err.to_string())
+    }
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorProtocol {
     #[error("Ok")]
-    Ok,
+    Ok = 0,
     #[error("Eof")]
-    Eof,
+    Eof = 1,
     #[error("No such file")]
-    NoSuchFile,
+    NoSuchFile = 2,
     #[error("Permission denined")]
-    PermissionDenined,
+    PermissionDenined = 3,
     #[error("Failure")]
-    Failure,
+    Failure = 4,
     #[error("Bad message")]
-    BadMessage,
+    BadMessage = 5,
     #[error("No connection")]
-    NoConnection,
+    NoConnection = 6,
     #[error("Connection lost")]
-    ConnectionLost,
+    ConnectionLost = 7,
     #[error("Operation unsupported")]
-    OpUnsupported,
+    OpUnsupported = 8,
 }

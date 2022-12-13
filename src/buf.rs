@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use bytes::Buf;
+use bytes::{Buf, BufMut};
 
 use crate::error::Error;
 
@@ -24,5 +24,18 @@ impl<T: Buf> TryBuf for T {
         }
 
         return Ok(self.get_u32());
+    }
+}
+
+pub trait PutBuf: BufMut {
+    fn put_str(&mut self, str: &str);
+}
+
+impl<T: BufMut> PutBuf for T {
+    fn put_str(&mut self, str: &str) {
+        let bytes = str.as_bytes();
+
+        self.put_u32(bytes.len() as u32);
+        self.put_slice(bytes);
     }
 }

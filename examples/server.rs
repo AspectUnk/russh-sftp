@@ -5,11 +5,13 @@ use russh::{
     Channel, ChannelId,
 };
 use russh_keys::key::KeyPair;
+use russh_sftp::{packet, server::Packet};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct Server {
+    sftp: SftpSession,
     clients: Arc<Mutex<HashMap<(usize, ChannelId), Channel<Msg>>>>,
     id: usize,
 }
@@ -62,7 +64,7 @@ impl russh::server::Handler for Server {
 
         if name == "sftp" {
             let channel = self.get_channel(channel_id).await;
-            russh_sftp::server::run(channel).await;
+            russh_sftp::server::run(channel, self.sftp.clone()).await;
 
             session.channel_success(channel_id);
         } else {
@@ -70,6 +72,19 @@ impl russh::server::Handler for Server {
         }
 
         Ok((self, session))
+    }
+}
+
+#[derive(Clone)]
+struct SftpSession {}
+
+#[async_trait]
+impl russh_sftp::server::Handler for SftpSession {
+    type Error = russh_sftp::ErrorProtocol;
+
+    async fn init(&mut self, init: packet::Init) -> Result<Packet, Self::Error> {
+        info!("version: {:?}", init.version);
+        Ok(packet::Version::new().into())
     }
 }
 
@@ -88,6 +103,7 @@ async fn main() {
     };
 
     let server = Server {
+        sftp: SftpSession {},
         clients: Arc::new(Mutex::new(HashMap::new())),
         id: 0,
     };
