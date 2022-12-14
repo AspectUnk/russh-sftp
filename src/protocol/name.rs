@@ -1,10 +1,10 @@
-use std::time::{Duration, UNIX_EPOCH};
-
 use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
+use std::time::{Duration, UNIX_EPOCH};
+
+use crate::{buf::PutBuf, file::FileAttributes, protocol};
 
 use super::impl_packet_for;
-use crate::{buf::PutBuf, file::FileAttributes, server};
 
 #[derive(Debug)]
 pub struct Name {
@@ -12,7 +12,7 @@ pub struct Name {
     pub files: Vec<File>,
 }
 
-impl_packet_for!(Name, server::Packet);
+impl_packet_for!(Name, protocol::Response);
 
 impl From<Name> for Bytes {
     fn from(name: Name) -> Self {

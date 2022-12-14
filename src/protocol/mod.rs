@@ -3,7 +3,10 @@ mod name;
 mod path;
 mod status;
 
+use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
+
+use crate::{buf::TryBuf, error};
 
 pub use self::{
     init::{Init, Version},
@@ -56,17 +59,67 @@ pub const SSH_FXP_ATTRS: u8 = 105;
 pub const SSH_FXP_EXTENDED: u8 = 200;
 pub const SSH_FXP_EXTENDED_REPLY: u8 = 201;
 
-pub const SSH_FX_OK: u32 = 0;
-pub const SSH_FX_EOF: u32 = 1;
-pub const SSH_FX_NO_SUCH_FILE: u32 = 2;
-pub const SSH_FX_PERMISSION_DENIED: u32 = 3;
-pub const SSH_FX_FAILURE: u32 = 4;
-pub const SSH_FX_BAD_MESSAGE: u32 = 5;
-pub const SSH_FX_NO_CONNECTION: u32 = 6;
-pub const SSH_FX_CONNECTION_LOST: u32 = 7;
-pub const SSH_FX_OP_UNSUPPORTED: u32 = 8;
+#[derive(Debug)]
+pub(crate) enum Request {
+    Init(Init),
+    RealPath(Path),
+}
 
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+impl TryFrom<&mut Bytes> for Request {
+    type Error = error::Error;
+
+    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
+        let r#type = bytes.try_get_u8()?;
+        debug!("packet type {}", r#type);
+
+        let packet = match r#type {
+            SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
+            SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
+            _ => return Err(StatusCode::OpUnsupported.into()),
+        };
+
+        Ok(packet)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum Response {
+    Version(Version),
+    Status(Status),
+    Name(Name),
+}
+
+impl From<error::Error> for Response {
+    fn from(err: error::Error) -> Self {
+        let status = match err {
+            error::Error::Protocol(p) => p,
+            _ => StatusCode::OpUnsupported,
+        };
+
+        Self::Status(Status::new(0, status, &status.to_string()))
+    }
+}
+
+impl From<Response> for Bytes {
+    fn from(response: Response) -> Self {
+        let (r#type, payload): (u8, Bytes) = match response {
+            Response::Version(p) => (SSH_FXP_VERSION, p.into()),
+            Response::Status(p) => (SSH_FXP_STATUS, p.into()),
+            Response::Name(p) => (SSH_FXP_NAME, p.into()),
+        };
+
+        let length = payload.len() as u32 + 1;
+        let mut bytes = BytesMut::new();
+
+        bytes.put_u32(length);
+        bytes.put_u8(r#type);
+        bytes.put_slice(&payload);
+
+        bytes.freeze()
+    }
+}
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum StatusCode {
     #[error("Ok")]
     Ok = 0,
@@ -90,17 +143,9 @@ pub enum StatusCode {
 
 impl From<u32> for StatusCode {
     fn from(value: u32) -> Self {
-        match value {
-            SSH_FX_OK => Self::Ok,
-            SSH_FX_EOF => Self::Eof,
-            SSH_FX_NO_SUCH_FILE => Self::NoSuchFile,
-            SSH_FX_PERMISSION_DENIED => Self::PermissionDenined,
-            SSH_FX_FAILURE => Self::Failure,
-            SSH_FX_BAD_MESSAGE => Self::BadMessage,
-            SSH_FX_NO_CONNECTION => Self::NoConnection,
-            SSH_FX_CONNECTION_LOST => Self::ConnectionLost,
-            SSH_FX_OP_UNSUPPORTED => Self::OpUnsupported,
-            _ => Self::Failure,
+        match num::FromPrimitive::from_u32(value) {
+            Some(e) => e,
+            None => Self::Failure,
         }
     }
 }

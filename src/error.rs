@@ -9,7 +9,7 @@ pub enum Error {
     IO(String),
     #[error("{0}")]
     Protocol(#[from] StatusCode),
-    #[error("Unexpected EOF on stream reading")]
+    #[error("Unexpected EOF on stream")]
     UnexpectedEof,
     #[error("{0}")]
     Internal(String),

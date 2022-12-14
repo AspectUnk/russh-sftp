@@ -1,12 +1,12 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use super::impl_packet_for;
 use crate::{
     buf::{PutBuf, TryBuf},
     error,
-    protocol::StatusCode,
-    server,
+    protocol::{self, StatusCode},
 };
+
+use super::impl_packet_for;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Status {
@@ -27,13 +27,7 @@ impl Status {
     }
 }
 
-impl From<StatusCode> for Status {
-    fn from(status: StatusCode) -> Self {
-        Self::new(0, status, &status.to_string())
-    }
-}
-
-impl_packet_for!(Status, server::Packet);
+impl_packet_for!(Status, protocol::Response);
 
 impl From<Status> for Bytes {
     fn from(status: Status) -> Self {

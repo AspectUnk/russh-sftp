@@ -13,6 +13,10 @@ keywords = ["russh", "sftp", "ssh2", "server", "client"]
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 
+num-derive = "0.3"
+num-traits = "0.2"
+num = "0.4"
+
 futures = "0.3"
 async-trait = "0.1"
 russh = "0.35.0-beta.8"

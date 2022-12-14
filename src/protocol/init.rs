@@ -1,7 +1,8 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
+use crate::{buf::TryBuf, error, protocol};
+
 use super::impl_packet_for;
-use crate::{buf::TryBuf, error, protocol, server};
 
 pub type Version = Init;
 
@@ -19,7 +20,7 @@ impl Init {
     }
 }
 
-impl_packet_for!(Version, server::Packet);
+impl_packet_for!(Version, protocol::Response);
 
 impl From<Init> for Bytes {
     fn from(packet: Init) -> Self {
