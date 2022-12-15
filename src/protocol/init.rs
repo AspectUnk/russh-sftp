@@ -27,6 +27,12 @@ impl Init {
 
 impl_packet_for!(Version, protocol::Response);
 
+impl Default for Init {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl From<Init> for Bytes {
     fn from(packet: Init) -> Self {
         let mut bytes = BytesMut::new();

@@ -1,6 +1,8 @@
+mod attrs;
 mod handle;
 mod init;
 mod name;
+mod open;
 mod path;
 mod status;
 
@@ -9,9 +11,11 @@ use bytes::{BufMut, Bytes, BytesMut};
 use crate::{buf::TryBuf, error::Error};
 
 pub use self::{
+    attrs::Attrs,
     handle::Handle,
     init::{Init, Version},
     name::{File, Name},
+    open::{Open, OpenFlags},
     path::Path,
     status::{Status, StatusCode},
 };
@@ -79,7 +83,9 @@ pub(crate) use impl_request_id;
 #[derive(Debug)]
 pub(crate) enum Request {
     Init(Init),
+    Open(Open),
     Close(Handle),
+    Lstat(Path),
     OpenDir(Path),
     ReadDir(Handle),
     RealPath(Path),
@@ -88,7 +94,9 @@ pub(crate) enum Request {
 impl Request {
     pub fn get_id(&self) -> u32 {
         match self {
+            Self::Open(open) => open.get_id(),
             Self::Close(close) => close.get_id(),
+            Self::Lstat(lstat) => lstat.get_id(),
             Self::OpenDir(opendir) => opendir.get_id(),
             Self::ReadDir(readdir) => readdir.get_id(),
             Self::RealPath(realpath) => realpath.get_id(),
@@ -106,7 +114,9 @@ impl TryFrom<&mut Bytes> for Request {
 
         let request = match r#type {
             SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
+            SSH_FXP_OPEN => Self::Open(Open::try_from(bytes)?),
             SSH_FXP_CLOSE => Self::Close(Handle::try_from(bytes)?),
+            SSH_FXP_LSTAT => Self::Lstat(Path::try_from(bytes)?),
             SSH_FXP_OPENDIR => Self::OpenDir(Path::try_from(bytes)?),
             SSH_FXP_READDIR => Self::ReadDir(Handle::try_from(bytes)?),
             SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
@@ -123,6 +133,7 @@ pub(crate) enum Response {
     Status(Status),
     Handle(Handle),
     Name(Name),
+    Attrs(Attrs),
 }
 
 impl Response {
@@ -143,10 +154,11 @@ impl Response {
 impl From<Response> for Bytes {
     fn from(response: Response) -> Self {
         let (r#type, payload): (u8, Bytes) = match response {
-            Response::Version(p) => (SSH_FXP_VERSION, p.into()),
-            Response::Status(p) => (SSH_FXP_STATUS, p.into()),
-            Response::Handle(p) => (SSH_FXP_HANDLE, p.into()),
-            Response::Name(p) => (SSH_FXP_NAME, p.into()),
+            Response::Version(version) => (SSH_FXP_VERSION, version.into()),
+            Response::Status(status) => (SSH_FXP_STATUS, status.into()),
+            Response::Handle(handle) => (SSH_FXP_HANDLE, handle.into()),
+            Response::Name(name) => (SSH_FXP_NAME, name.into()),
+            Response::Attrs(attrs) => (SSH_FXP_ATTRS, attrs.into()),
         };
 
         let length = payload.len() as u32 + 1;

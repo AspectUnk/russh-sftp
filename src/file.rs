@@ -1,13 +1,20 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-const SSH_FILEXFER_ATTR_SIZE: u32 = 0x00000001;
-const SSH_FILEXFER_ATTR_UIDGID: u32 = 0x00000002;
-const SSH_FILEXFER_ATTR_PERMISSIONS: u32 = 0x00000004;
-const SSH_FILEXFER_ATTR_ACMODTIME: u32 = 0x00000008;
+use crate::{buf::TryBuf, error};
+
+bitflags! {
+    #[derive(Default)]
+    pub struct FileAttrFlags: u32 {
+        const SIZE = 0x00000001;
+        const UIDGID = 0x00000002;
+        const PERMISSIONS = 0x00000004;
+        const ACMODTIME = 0x00000008;
+    }
+}
 
 const S_IFDIR: u32 = 0x4000;
-const S_IFREG: u32 = 0x8000;
-const S_IFLNK: u32 = 0xA000;
+// const S_IFREG: u32 = 0x8000;
+// const S_IFLNK: u32 = 0xA000;
 
 #[derive(Debug)]
 pub struct FileAttributes {
@@ -38,27 +45,27 @@ impl Default for FileAttributes {
 
 impl From<&FileAttributes> for Bytes {
     fn from(file_attrs: &FileAttributes) -> Self {
-        let mut attrs: u32 = 0;
+        let mut attrs = FileAttrFlags::default();
 
         if file_attrs.size.is_some() {
-            attrs |= SSH_FILEXFER_ATTR_SIZE;
+            attrs |= FileAttrFlags::SIZE;
         }
 
         if file_attrs.uid.is_some() || file_attrs.gid.is_some() {
-            attrs |= SSH_FILEXFER_ATTR_UIDGID;
+            attrs |= FileAttrFlags::UIDGID;
         }
 
         if file_attrs.permissions.is_some() {
-            attrs |= SSH_FILEXFER_ATTR_PERMISSIONS;
+            attrs |= FileAttrFlags::PERMISSIONS;
         }
 
         if file_attrs.atime.is_some() || file_attrs.mtime.is_some() {
-            attrs |= SSH_FILEXFER_ATTR_ACMODTIME;
+            attrs |= FileAttrFlags::ACMODTIME;
         }
 
         let mut bytes = BytesMut::new();
 
-        bytes.put_u32(attrs);
+        bytes.put_u32(attrs.bits);
 
         if let Some(size) = file_attrs.size {
             bytes.put_u64(size);
@@ -79,5 +86,50 @@ impl From<&FileAttributes> for Bytes {
         }
 
         bytes.freeze()
+    }
+}
+
+impl TryFrom<&mut Bytes> for FileAttributes {
+    type Error = error::Error;
+
+    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
+        let attrs = FileAttrFlags {
+            bits: bytes.try_get_u32()?,
+        };
+
+        Ok(Self {
+            size: if attrs.contains(FileAttrFlags::SIZE) {
+                Some(bytes.try_get_u64()?)
+            } else {
+                None
+            },
+            uid: if attrs.contains(FileAttrFlags::UIDGID) {
+                Some(bytes.try_get_u32()?)
+            } else {
+                None
+            },
+            user: None,
+            gid: if attrs.contains(FileAttrFlags::UIDGID) {
+                Some(bytes.try_get_u32()?)
+            } else {
+                None
+            },
+            group: None,
+            permissions: if attrs.contains(FileAttrFlags::PERMISSIONS) {
+                Some(bytes.try_get_u32()?)
+            } else {
+                None
+            },
+            atime: if attrs.contains(FileAttrFlags::ACMODTIME) {
+                Some(bytes.try_get_u32()?)
+            } else {
+                None
+            },
+            mtime: if attrs.contains(FileAttrFlags::ACMODTIME) {
+                Some(bytes.try_get_u32()?)
+            } else {
+                None
+            },
+        })
     }
 }

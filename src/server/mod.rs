@@ -37,7 +37,12 @@ where
 
     match request {
         Request::Init(init) => into_wrap!(id, handler.init(init.version, init.extensions)),
+        Request::Open(open) => into_wrap!(
+            id,
+            handler.open(open.id, open.filename, open.pflags, open.attrs)
+        ),
         Request::Close(close) => into_wrap!(id, handler.close(close.id, close.handle)),
+        Request::Lstat(lstat) => into_wrap!(id, handler.lstat(lstat.id, lstat.path)),
         Request::OpenDir(opendir) => into_wrap!(id, handler.opendir(opendir.id, opendir.path)),
         Request::ReadDir(readdir) => into_wrap!(id, handler.readdir(readdir.id, readdir.handle)),
         Request::RealPath(realpath) => into_wrap!(id, handler.realpath(realpath.id, realpath.path)),
