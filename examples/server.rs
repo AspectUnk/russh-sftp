@@ -5,7 +5,10 @@ use russh::{
     Channel, ChannelId,
 };
 use russh_keys::key::KeyPair;
-use russh_sftp::protocol::{StatusCode, Version};
+use russh_sftp::{
+    file::FileAttributes,
+    protocol::{File, Handle, Name, StatusCode, Version},
+};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
@@ -89,6 +92,25 @@ impl russh_sftp::server::Handler for SftpSession {
     async fn init(self, version: u32) -> Result<Version, Self::Error> {
         info!("version: {:?}", version);
         Ok(Version::new())
+    }
+
+    async fn opendir(self, id: u32, path: String) -> Result<Handle, Self::Error> {
+        info!("opendir: {}", path);
+        Ok(Handle {
+            id,
+            handle: "1".to_string(),
+        })
+    }
+
+    async fn realpath(self, id: u32, path: String) -> Result<Name, Self::Error> {
+        info!("realpath: {}", path);
+        Ok(Name {
+            id,
+            files: vec![File {
+                filename: "/".to_string(),
+                attrs: FileAttributes::default(),
+            }],
+        })
     }
 }
 

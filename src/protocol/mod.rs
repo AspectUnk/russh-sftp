@@ -1,3 +1,4 @@
+mod handle;
 mod init;
 mod name;
 mod path;
@@ -6,26 +7,15 @@ mod status;
 use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
 
-use crate::{buf::TryBuf, error};
+use crate::{buf::TryBuf, error::Error};
 
 pub use self::{
+    handle::Handle,
     init::{Init, Version},
     name::{File, Name},
     path::Path,
     status::Status,
 };
-
-macro_rules! impl_packet_for {
-    ($name:ident, $packet:ty) => {
-        impl From<$name> for $packet {
-            fn from(input: $name) -> Self {
-                Self::$name(input)
-            }
-        }
-    };
-}
-
-pub(crate) use impl_packet_for;
 
 pub const VERSION: u32 = 3;
 
@@ -59,26 +49,66 @@ pub const SSH_FXP_ATTRS: u8 = 105;
 pub const SSH_FXP_EXTENDED: u8 = 200;
 pub const SSH_FXP_EXTENDED_REPLY: u8 = 201;
 
+macro_rules! impl_packet_for {
+    ($name:ident, $packet:ty) => {
+        impl From<$name> for $packet {
+            fn from(input: $name) -> Self {
+                Self::$name(input)
+            }
+        }
+    };
+}
+
+pub(crate) use impl_packet_for;
+
+pub(crate) trait RequestId: Sized {
+    fn get_id(&self) -> u32;
+}
+
+macro_rules! impl_request_id {
+    ($packet:ty) => {
+        impl RequestId for $packet {
+            fn get_id(&self) -> u32 {
+                self.id
+            }
+        }
+    };
+}
+
+pub(crate) use impl_request_id;
+
 #[derive(Debug)]
 pub(crate) enum Request {
     Init(Init),
+    OpenDir(Path),
     RealPath(Path),
 }
 
+impl Request {
+    pub fn get_id(&self) -> u32 {
+        match self {
+            Self::OpenDir(opendir) => opendir.get_id(),
+            Self::RealPath(realpath) => realpath.get_id(),
+            _ => 0,
+        }
+    }
+}
+
 impl TryFrom<&mut Bytes> for Request {
-    type Error = error::Error;
+    type Error = Error;
 
     fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
         let r#type = bytes.try_get_u8()?;
         debug!("packet type {}", r#type);
 
-        let packet = match r#type {
+        let request = match r#type {
             SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
+            SSH_FXP_OPENDIR => Self::OpenDir(Path::try_from(bytes)?),
             SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
             _ => return Err(StatusCode::OpUnsupported.into()),
         };
 
-        Ok(packet)
+        Ok(request)
     }
 }
 
@@ -86,17 +116,22 @@ impl TryFrom<&mut Bytes> for Request {
 pub(crate) enum Response {
     Version(Version),
     Status(Status),
+    Handle(Handle),
     Name(Name),
 }
 
-impl From<error::Error> for Response {
-    fn from(err: error::Error) -> Self {
-        let status = match err {
-            error::Error::Protocol(p) => p,
-            _ => StatusCode::OpUnsupported,
-        };
+impl Response {
+    pub fn status(id: u32, status_code: StatusCode, msg: &str, tag: &str) -> Self {
+        Response::Status(Status {
+            id,
+            status_code,
+            error_message: msg.to_string(),
+            language_tag: tag.to_string(),
+        })
+    }
 
-        Self::Status(Status::new(0, status, &status.to_string()))
+    pub fn error(id: u32, status_code: StatusCode) -> Self {
+        Self::status(id, status_code, &status_code.to_string(), "en-US")
     }
 }
 
@@ -105,16 +140,16 @@ impl From<Response> for Bytes {
         let (r#type, payload): (u8, Bytes) = match response {
             Response::Version(p) => (SSH_FXP_VERSION, p.into()),
             Response::Status(p) => (SSH_FXP_STATUS, p.into()),
+            Response::Handle(p) => (SSH_FXP_HANDLE, p.into()),
             Response::Name(p) => (SSH_FXP_NAME, p.into()),
         };
 
         let length = payload.len() as u32 + 1;
-        let mut bytes = BytesMut::new();
 
+        let mut bytes = BytesMut::new();
         bytes.put_u32(length);
         bytes.put_u8(r#type);
         bytes.put_slice(&payload);
-
         bytes.freeze()
     }
 }

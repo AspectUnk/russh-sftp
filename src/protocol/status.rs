@@ -16,17 +16,6 @@ pub struct Status {
     pub language_tag: String,
 }
 
-impl Status {
-    pub fn new(id: u32, status: StatusCode, msg: &str) -> Self {
-        Self {
-            id: id,
-            status_code: status,
-            error_message: msg.to_string(),
-            language_tag: "en-US".to_string(),
-        }
-    }
-}
-
 impl_packet_for!(Status, protocol::Response);
 
 impl From<Status> for Bytes {

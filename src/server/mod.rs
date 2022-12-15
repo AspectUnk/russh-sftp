@@ -8,12 +8,15 @@ pub use self::handler::Handler;
 
 use crate::{
     error::Error,
-    protocol::{Request, Response},
+    protocol::{Request, Response, StatusCode},
 };
 
 macro_rules! into_wrap {
-    ($handler:expr) => {
-        $handler.await.map_err(|e| e.into())?.into()
+    ($id:expr, $handler:expr) => {
+        match $handler.await {
+            Err(err) => Response::error($id, err.into()),
+            Ok(packet) => packet.into(),
+        }
     };
 }
 
@@ -26,16 +29,17 @@ async fn read_buf(stream: &mut ChannelStream) -> Result<Bytes, Error> {
     Ok(Bytes::from(buf))
 }
 
-async fn process_packet<H>(bytes: &mut Bytes, handler: H) -> Result<Response, Error>
+async fn process_request<H>(request: Request, handler: H) -> Response
 where
     H: Handler + Clone + Send,
 {
-    let response = match Request::try_from(bytes)? {
-        Request::Init(p) => into_wrap!(handler.init(p.version)),
-        Request::RealPath(p) => into_wrap!(handler.realpath(p.id, p.path)),
-    };
+    let id = request.get_id();
 
-    Ok(response)
+    match request {
+        Request::Init(init) => into_wrap!(id, handler.init(init.version)),
+        Request::OpenDir(opendir) => into_wrap!(id, handler.opendir(opendir.id, opendir.path)),
+        Request::RealPath(realpath) => into_wrap!(id, handler.realpath(realpath.id, realpath.path)),
+    }
 }
 
 async fn handler<H>(stream: &mut ChannelStream, handler: H) -> Result<(), Error>
@@ -44,12 +48,13 @@ where
 {
     let mut bytes = read_buf(stream).await?;
 
-    let response: Bytes = match process_packet(&mut bytes, handler).await {
-        Err(err) => Response::from(err).into(),
-        Ok(response) => response.into(),
+    let response = match Request::try_from(&mut bytes) {
+        Ok(request) => process_request(request, handler).await,
+        Err(_) => Response::error(0, StatusCode::OpUnsupported),
     };
 
-    stream.write_all(&response).await?;
+    let packet = Bytes::from(response);
+    stream.write_all(&packet).await?;
 
     Ok(())
 }
