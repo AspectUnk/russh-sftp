@@ -36,8 +36,10 @@ where
     let id = request.get_id();
 
     match request {
-        Request::Init(init) => into_wrap!(id, handler.init(init.version)),
+        Request::Init(init) => into_wrap!(id, handler.init(init.version, init.extensions)),
+        Request::Close(close) => into_wrap!(id, handler.close(close.id, close.handle)),
         Request::OpenDir(opendir) => into_wrap!(id, handler.opendir(opendir.id, opendir.path)),
+        Request::ReadDir(readdir) => into_wrap!(id, handler.readdir(readdir.id, readdir.handle)),
         Request::RealPath(realpath) => into_wrap!(id, handler.realpath(realpath.id, realpath.path)),
     }
 }
@@ -50,7 +52,7 @@ where
 
     let response = match Request::try_from(&mut bytes) {
         Ok(request) => process_request(request, handler).await,
-        Err(_) => Response::error(0, StatusCode::OpUnsupported),
+        Err(_) => Response::error(0, StatusCode::BadMessage),
     };
 
     let packet = Bytes::from(response);

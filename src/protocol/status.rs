@@ -1,12 +1,43 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use thiserror::Error;
 
 use crate::{
     buf::{PutBuf, TryBuf},
-    error,
-    protocol::{self, StatusCode},
+    error, protocol,
 };
 
 use super::impl_packet_for;
+
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+pub enum StatusCode {
+    #[error("Ok")]
+    Ok = 0,
+    #[error("Eof")]
+    Eof = 1,
+    #[error("No such file")]
+    NoSuchFile = 2,
+    #[error("Permission denined")]
+    PermissionDenined = 3,
+    #[error("Failure")]
+    Failure = 4,
+    #[error("Bad message")]
+    BadMessage = 5,
+    #[error("No connection")]
+    NoConnection = 6,
+    #[error("Connection lost")]
+    ConnectionLost = 7,
+    #[error("Operation unsupported")]
+    OpUnsupported = 8,
+}
+
+impl From<u32> for StatusCode {
+    fn from(value: u32) -> Self {
+        match num::FromPrimitive::from_u32(value) {
+            Some(e) => e,
+            None => Self::Failure,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Status {

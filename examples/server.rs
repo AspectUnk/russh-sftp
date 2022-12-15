@@ -7,7 +7,7 @@ use russh::{
 use russh_keys::key::KeyPair;
 use russh_sftp::{
     file::FileAttributes,
-    protocol::{File, Handle, Name, StatusCode, Version},
+    protocol::{File, Handle, Name, Status, StatusCode, Version},
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -89,9 +89,22 @@ impl russh_sftp::server::Handler for SftpSession {
         StatusCode::OpUnsupported
     }
 
-    async fn init(self, version: u32) -> Result<Version, Self::Error> {
-        info!("version: {:?}", version);
+    async fn init(
+        self,
+        version: u32,
+        extensions: HashMap<String, String>,
+    ) -> Result<Version, Self::Error> {
+        info!("version: {}, extensions: {:?}", version, extensions);
         Ok(Version::new())
+    }
+
+    async fn close(self, id: u32, _handle: String) -> Result<Status, Self::Error> {
+        Ok(Status {
+            id,
+            status_code: StatusCode::Ok,
+            error_message: "Ok".to_string(),
+            language_tag: "en-US".to_string(),
+        })
     }
 
     async fn opendir(self, id: u32, path: String) -> Result<Handle, Self::Error> {
@@ -100,6 +113,11 @@ impl russh_sftp::server::Handler for SftpSession {
             id,
             handle: "1".to_string(),
         })
+    }
+
+    async fn readdir(self, id: u32, handle: String) -> Result<Name, Self::Error> {
+        info!("readdir handle: {}", handle);
+        Ok(Name { id, files: vec![] })
     }
 
     async fn realpath(self, id: u32, path: String) -> Result<Name, Self::Error> {

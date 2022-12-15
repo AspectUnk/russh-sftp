@@ -1,8 +1,11 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{buf::PutBuf, protocol};
+use crate::{
+    buf::{PutBuf, TryBuf},
+    error, protocol,
+};
 
-use super::impl_packet_for;
+use super::{impl_packet_for, impl_request_id, RequestId};
 
 #[derive(Debug)]
 pub struct Handle {
@@ -10,6 +13,7 @@ pub struct Handle {
     pub handle: String,
 }
 
+impl_request_id!(Handle);
 impl_packet_for!(Handle, protocol::Response);
 
 impl From<Handle> for Bytes {
@@ -18,5 +22,16 @@ impl From<Handle> for Bytes {
         bytes.put_u32(handle.id);
         bytes.put_str(&handle.handle);
         bytes.freeze()
+    }
+}
+
+impl TryFrom<&mut Bytes> for Handle {
+    type Error = error::Error;
+
+    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: bytes.try_get_u32()?,
+            handle: bytes.try_get_string()?,
+        })
     }
 }

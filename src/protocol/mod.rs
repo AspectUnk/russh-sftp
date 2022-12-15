@@ -5,7 +5,6 @@ mod path;
 mod status;
 
 use bytes::{BufMut, Bytes, BytesMut};
-use thiserror::Error;
 
 use crate::{buf::TryBuf, error::Error};
 
@@ -14,7 +13,7 @@ pub use self::{
     init::{Init, Version},
     name::{File, Name},
     path::Path,
-    status::Status,
+    status::{Status, StatusCode},
 };
 
 pub const VERSION: u32 = 3;
@@ -80,14 +79,18 @@ pub(crate) use impl_request_id;
 #[derive(Debug)]
 pub(crate) enum Request {
     Init(Init),
+    Close(Handle),
     OpenDir(Path),
+    ReadDir(Handle),
     RealPath(Path),
 }
 
 impl Request {
     pub fn get_id(&self) -> u32 {
         match self {
+            Self::Close(close) => close.get_id(),
             Self::OpenDir(opendir) => opendir.get_id(),
+            Self::ReadDir(readdir) => readdir.get_id(),
             Self::RealPath(realpath) => realpath.get_id(),
             _ => 0,
         }
@@ -103,9 +106,11 @@ impl TryFrom<&mut Bytes> for Request {
 
         let request = match r#type {
             SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
+            SSH_FXP_CLOSE => Self::Close(Handle::try_from(bytes)?),
             SSH_FXP_OPENDIR => Self::OpenDir(Path::try_from(bytes)?),
+            SSH_FXP_READDIR => Self::ReadDir(Handle::try_from(bytes)?),
             SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
-            _ => return Err(StatusCode::OpUnsupported.into()),
+            _ => return Err(Error::BadMessage),
         };
 
         Ok(request)
@@ -151,36 +156,5 @@ impl From<Response> for Bytes {
         bytes.put_u8(r#type);
         bytes.put_slice(&payload);
         bytes.freeze()
-    }
-}
-
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq, FromPrimitive)]
-pub enum StatusCode {
-    #[error("Ok")]
-    Ok = 0,
-    #[error("Eof")]
-    Eof = 1,
-    #[error("No such file")]
-    NoSuchFile = 2,
-    #[error("Permission denined")]
-    PermissionDenined = 3,
-    #[error("Failure")]
-    Failure = 4,
-    #[error("Bad message")]
-    BadMessage = 5,
-    #[error("No connection")]
-    NoConnection = 6,
-    #[error("Connection lost")]
-    ConnectionLost = 7,
-    #[error("Operation unsupported")]
-    OpUnsupported = 8,
-}
-
-impl From<u32> for StatusCode {
-    fn from(value: u32) -> Self {
-        match num::FromPrimitive::from_u32(value) {
-            Some(e) => e,
-            None => Self::Failure,
-        }
     }
 }
