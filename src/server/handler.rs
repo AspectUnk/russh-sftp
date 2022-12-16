@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     file::FileAttributes,
-    protocol::{Attrs, Data, Handle, Name, OpenFlags, Status, StatusCode, Version},
+    protocol::{Attrs, Data, ExtendedReply, Handle, Name, OpenFlags, Status, StatusCode, Version},
 };
 
 #[async_trait]
@@ -152,6 +152,16 @@ pub trait Handler: Sized {
         linkpath: String,
         targetpath: String,
     ) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn extended(
+        self,
+        id: u32,
+        request: String,
+        data: Vec<u8>,
+    ) -> Result<ExtendedReply, Self::Error> {
         Err(self.unimplemented())
     }
 }

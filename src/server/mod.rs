@@ -33,7 +33,7 @@ async fn process_request<H>(request: Request, handler: H) -> Response
 where
     H: Handler + Send,
 {
-    let id = request.get_id();
+    let id = request.get_request_id();
 
     match request {
         Request::Init(init) => into_wrap!(id, handler.init(init.version, init.extensions)),
@@ -74,6 +74,10 @@ where
         Request::Symlink(symlink) => into_wrap!(
             id,
             handler.symlink(symlink.id, symlink.linkpath, symlink.targetpath)
+        ),
+        Request::Extended(extended) => into_wrap!(
+            id,
+            handler.extended(extended.id, extended.request, extended.data)
         ),
     }
 }
