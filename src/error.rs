@@ -16,6 +16,7 @@ impl From<io::Error> for Error {
         let kind = err.kind();
         let msg = err.into_inner().map_or("".to_string(), |m| format!("{m}"));
         match kind {
+            io::ErrorKind::UnexpectedEof => Self::UnexpectedEof,
             io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
             e => Self::IO(e.to_string()),
         }
