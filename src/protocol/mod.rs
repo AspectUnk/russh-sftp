@@ -43,18 +43,6 @@ pub const VERSION: u32 = 3;
 pub const SSH_FXP_EXTENDED: u8 = 200;
 pub const SSH_FXP_EXTENDED_REPLY: u8 = 201;
 
-macro_rules! impl_packet_for {
-    ($name:ident, $packet:ty) => {
-        impl From<$name> for $packet {
-            fn from(input: $name) -> Self {
-                Self::$name(input)
-            }
-        }
-    };
-}
-
-pub(crate) use impl_packet_for;
-
 pub(crate) trait RequestId: Sized {
     fn get_id(&self) -> u32;
 }
@@ -69,7 +57,18 @@ macro_rules! impl_request_id {
     };
 }
 
+macro_rules! impl_packet_for {
+    ($name:ident, $packet:ty) => {
+        impl From<$name> for $packet {
+            fn from(input: $name) -> Self {
+                Self::$name(input)
+            }
+        }
+    };
+}
+
 pub(crate) use impl_request_id;
+pub(crate) use impl_packet_for;
 
 #[derive(Debug)]
 pub(crate) enum Request {
