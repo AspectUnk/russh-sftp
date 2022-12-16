@@ -2,9 +2,9 @@ use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use std::time::{Duration, UNIX_EPOCH};
 
-use crate::{buf::PutBuf, file::FileAttributes, protocol};
+use crate::{buf::PutBuf, protocol};
 
-use super::impl_packet_for;
+use super::{impl_packet_for, FileAttributes};
 
 /// Implementation for SSH_FXP_NAME
 #[derive(Debug)]

@@ -2,6 +2,7 @@ mod attrs;
 mod data;
 mod extended;
 mod extended_reply;
+mod file_attrs;
 mod handle;
 mod handle_attrs;
 mod init;
@@ -26,6 +27,7 @@ pub use self::{
     data::Data,
     extended::Extended,
     extended_reply::ExtendedReply,
+    file_attrs::{FileAttrFlags, FileAttributes, FileMode},
     handle::Handle,
     handle_attrs::HandleAttrs,
     init::Init,

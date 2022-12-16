@@ -1,8 +1,8 @@
 use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{file::FileAttributes, protocol};
+use crate::protocol;
 
-use super::impl_packet_for;
+use super::{impl_packet_for, FileAttributes};
 
 /// Implementation for SSH_FXP_ATTRS
 #[derive(Debug)]

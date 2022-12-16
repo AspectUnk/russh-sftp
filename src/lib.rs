@@ -9,7 +9,6 @@ extern crate async_trait;
 
 mod buf;
 mod error;
-pub mod file;
 /// Protocol implementation
 pub mod protocol;
 /// Server side

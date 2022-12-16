@@ -1,8 +1,8 @@
 use bytes::Bytes;
 
-use crate::{buf::TryBuf, error, file::FileAttributes};
+use crate::{buf::TryBuf, error};
 
-use super::{impl_request_id, RequestId};
+use super::{impl_request_id, RequestId, FileAttributes};
 
 /// Implementation for SSH_FXP_FSETSTAT
 #[derive(Debug)]
