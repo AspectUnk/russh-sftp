@@ -5,6 +5,7 @@ use crate::protocol;
 
 use super::impl_packet_for;
 
+/// Implementation for SSH_FXP_DATA
 pub struct Data {
     pub id: u32,
     pub data: Vec<u8>,

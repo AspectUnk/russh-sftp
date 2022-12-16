@@ -4,6 +4,7 @@ use crate::{buf::TryBuf, error, file::FileAttributes};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_FSETSTAT
 #[derive(Debug)]
 pub struct HandleAttrs {
     pub id: u32,

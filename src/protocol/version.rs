@@ -5,6 +5,7 @@ use crate::{buf::PutBuf, protocol};
 
 use super::impl_packet_for;
 
+/// Implementation for SSH_FXP_VERSION
 #[derive(Debug, PartialEq, Eq)]
 pub struct Version {
     pub version: u32,

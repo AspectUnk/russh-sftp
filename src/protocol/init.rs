@@ -3,6 +3,7 @@ use std::collections::HashMap;
 
 use crate::{buf::TryBuf, error};
 
+/// Implementation for SSH_FXP_INIT
 #[derive(Debug, PartialEq, Eq)]
 pub struct Init {
     pub version: u32,

@@ -29,7 +29,7 @@ async fn read_buf(stream: &mut ChannelStream) -> Result<Bytes, Error> {
     Ok(Bytes::from(buf))
 }
 
-async fn process_request<H>(request: Request, handler: H) -> Response
+async fn process_request<H>(request: Request, handler: &mut H) -> Response
 where
     H: Handler + Send,
 {
@@ -82,7 +82,7 @@ where
     }
 }
 
-async fn handler<H>(stream: &mut ChannelStream, handler: H) -> Result<(), Error>
+async fn process_handler<H>(stream: &mut ChannelStream, handler: &mut H) -> Result<(), Error>
 where
     H: Handler + Send,
 {
@@ -99,20 +99,22 @@ where
     Ok(())
 }
 
-pub async fn run<H>(channel: Channel<Msg>, handle: H)
+/// Run processing channel as SFTP
+pub async fn run<H>(channel: Channel<Msg>, mut handler: H)
 where
-    H: Handler + Clone + Send + Sync + 'static,
+    H: Handler + Send + 'static,
 {
+    let channel_id = channel.id();
     let mut stream = channel.into_stream();
     tokio::spawn(async move {
         loop {
-            match handler(&mut stream, handle.clone()).await {
+            match process_handler(&mut stream, &mut handler).await {
                 Err(Error::UnexpectedEof) => break,
                 Err(err) => warn!("{}", err),
                 Ok(_) => (),
             }
         }
 
-        debug!("sftp stream ended");
+        debug!("sftp stream #{} ended", channel_id);
     });
 }

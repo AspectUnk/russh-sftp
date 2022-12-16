@@ -5,6 +5,7 @@ use crate::{buf::TryBuf, error};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_WRITE
 pub struct Write {
     pub id: u32,
     pub handle: String,

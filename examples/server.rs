@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use log::{info, LevelFilter};
+use log::{error, info, LevelFilter};
 use russh::{
     server::{Auth, Msg, Session},
     Channel, ChannelId,
@@ -14,7 +14,6 @@ use tokio::sync::Mutex;
 
 #[derive(Clone)]
 struct Server {
-    sftp: SftpSession,
     clients: Arc<Mutex<HashMap<(usize, ChannelId), Channel<Msg>>>>,
     id: usize,
 }
@@ -67,7 +66,9 @@ impl russh::server::Handler for Server {
 
         if name == "sftp" {
             let channel = self.get_channel(channel_id).await;
-            russh_sftp::server::run(channel, self.sftp.clone()).await;
+            let sftp = SftpSession { version: None };
+
+            russh_sftp::server::run(channel, sftp).await;
 
             session.channel_success(channel_id);
         } else {
@@ -78,27 +79,34 @@ impl russh::server::Handler for Server {
     }
 }
 
-#[derive(Clone)]
-struct SftpSession {}
+struct SftpSession {
+    version: Option<u32>,
+}
 
 #[async_trait]
 impl russh_sftp::server::Handler for SftpSession {
     type Error = StatusCode;
 
-    fn unimplemented(self) -> Self::Error {
+    fn unimplemented(&self) -> Self::Error {
         StatusCode::OpUnsupported
     }
 
     async fn init(
-        self,
+        &mut self,
         version: u32,
         extensions: HashMap<String, String>,
     ) -> Result<Version, Self::Error> {
-        info!("version: {}, extensions: {:?}", version, extensions);
+        if self.version.is_some() {
+            error!("duplicate SSH_FXP_VERSION packet");
+            return Err(StatusCode::ConnectionLost);
+        }
+
+        self.version = Some(version);
+        info!("version: {:?}, extensions: {:?}", self.version, extensions);
         Ok(Version::new())
     }
 
-    async fn close(self, id: u32, _handle: String) -> Result<Status, Self::Error> {
+    async fn close(&mut self, id: u32, _handle: String) -> Result<Status, Self::Error> {
         Ok(Status {
             id,
             status_code: StatusCode::Ok,
@@ -107,7 +115,7 @@ impl russh_sftp::server::Handler for SftpSession {
         })
     }
 
-    async fn opendir(self, id: u32, path: String) -> Result<Handle, Self::Error> {
+    async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
         info!("opendir: {}", path);
         Ok(Handle {
             id,
@@ -115,12 +123,12 @@ impl russh_sftp::server::Handler for SftpSession {
         })
     }
 
-    async fn readdir(self, id: u32, handle: String) -> Result<Name, Self::Error> {
+    async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
         info!("readdir handle: {}", handle);
         Ok(Name { id, files: vec![] })
     }
 
-    async fn realpath(self, id: u32, path: String) -> Result<Name, Self::Error> {
+    async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
         info!("realpath: {}", path);
         Ok(Name {
             id,
@@ -147,7 +155,6 @@ async fn main() {
     };
 
     let server = Server {
-        sftp: SftpSession {},
         clients: Arc::new(Mutex::new(HashMap::new())),
         id: 0,
     };

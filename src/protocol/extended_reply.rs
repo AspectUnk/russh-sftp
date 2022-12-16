@@ -4,6 +4,7 @@ use crate::protocol;
 
 use super::impl_packet_for;
 
+/// Implementation for SSH_FXP_EXTENDED_REPLY
 #[derive(Debug)]
 pub struct ExtendedReply {
     pub id: u32,

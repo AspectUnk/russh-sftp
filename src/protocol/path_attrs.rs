@@ -4,6 +4,7 @@ use crate::{buf::TryBuf, error, file::FileAttributes};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_... SETSTAT and MKDIR
 #[derive(Debug)]
 pub struct PathAttrs {
     pub id: u32,

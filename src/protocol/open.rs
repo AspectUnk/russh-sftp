@@ -5,6 +5,7 @@ use crate::{buf::TryBuf, error, file::FileAttributes};
 use super::{impl_request_id, RequestId};
 
 bitflags! {
+    /// Opening flags according to the specification
     #[derive(Default)]
     pub struct OpenFlags: u32 {
         const READ = 0x00000001;
@@ -16,6 +17,7 @@ bitflags! {
     }
 }
 
+/// Implementation for SSH_FXP_OPEN
 #[derive(Debug)]
 pub struct Open {
     pub id: u32,

@@ -7,6 +7,7 @@ use crate::{
 
 use super::{impl_packet_for, impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_... CLOSE, FSTAT and READDIR
 #[derive(Debug)]
 pub struct Handle {
     pub id: u32,

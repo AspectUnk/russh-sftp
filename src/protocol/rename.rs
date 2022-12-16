@@ -4,6 +4,7 @@ use crate::{buf::TryBuf, error};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_RENAME
 #[derive(Debug)]
 pub struct Rename {
     pub id: u32,

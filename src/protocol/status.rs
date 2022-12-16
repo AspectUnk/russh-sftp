@@ -8,6 +8,7 @@ use crate::{
 
 use super::impl_packet_for;
 
+/// Error Codes for SSH_FXP_STATUS
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq, FromPrimitive)]
 pub enum StatusCode {
     #[error("Ok")]
@@ -39,6 +40,7 @@ impl From<u32> for StatusCode {
     }
 }
 
+/// Implementation for SSH_FXP_STATUS
 #[derive(Debug, PartialEq, Eq)]
 pub struct Status {
     pub id: u32,

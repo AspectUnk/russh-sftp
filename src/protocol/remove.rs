@@ -4,6 +4,7 @@ use crate::{buf::TryBuf, error};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_REMOVE
 #[derive(Debug)]
 pub struct Remove {
     pub id: u32,

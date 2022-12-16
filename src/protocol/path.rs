@@ -4,6 +4,8 @@ use crate::{buf::TryBuf, error};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_... LSTAT, OPENDIR,
+/// RMDIR, REALPATH, STAT and READLINK
 #[derive(Debug, PartialEq, Eq)]
 pub struct Path {
     pub id: u32,

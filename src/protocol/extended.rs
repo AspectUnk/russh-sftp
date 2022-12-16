@@ -4,6 +4,7 @@ use crate::{buf::TryBuf, error};
 
 use super::{impl_request_id, RequestId};
 
+/// Implementation for SSH_FXP_EXTENDED
 #[derive(Debug)]
 pub struct Extended {
     pub id: u32,
