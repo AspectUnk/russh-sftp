@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     file::FileAttributes,
-    protocol::{Attrs, Handle, Name, OpenFlags, Status, StatusCode, Version},
+    protocol::{Attrs, Data, Handle, Name, OpenFlags, Status, StatusCode, Version},
 };
 
 #[async_trait]
@@ -39,7 +39,54 @@ pub trait Handler: Sized {
     }
 
     #[allow(unused_variables)]
+    async fn read(
+        self,
+        id: u32,
+        handle: String,
+        offset: u64,
+        len: u32,
+    ) -> Result<Data, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn write(
+        self,
+        id: u32,
+        handle: String,
+        offset: u64,
+        data: Vec<u8>,
+    ) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
     async fn lstat(self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn fstat(self, id: u32, handle: String) -> Result<Attrs, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn setstat(
+        self,
+        id: u32,
+        path: String,
+        attrs: FileAttributes,
+    ) -> Result<Attrs, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn fsetstat(
+        self,
+        id: u32,
+        handle: String,
+        attrs: FileAttributes,
+    ) -> Result<Attrs, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -54,7 +101,57 @@ pub trait Handler: Sized {
     }
 
     #[allow(unused_variables)]
+    async fn remove(self, id: u32, filename: String) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn mkdir(
+        self,
+        id: u32,
+        path: String,
+        attrs: FileAttributes,
+    ) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn rmdir(self, id: u32, path: String) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
     async fn realpath(self, id: u32, path: String) -> Result<Name, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn stat(self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn rename(
+        self,
+        id: u32,
+        oldpath: String,
+        newpath: String,
+    ) -> Result<Status, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn readlink(self, id: u32, path: String) -> Result<Name, Self::Error> {
+        Err(self.unimplemented())
+    }
+
+    #[allow(unused_variables)]
+    async fn symlink(
+        self,
+        id: u32,
+        linkpath: String,
+        targetpath: String,
+    ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 }

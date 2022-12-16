@@ -31,7 +31,7 @@ async fn read_buf(stream: &mut ChannelStream) -> Result<Bytes, Error> {
 
 async fn process_request<H>(request: Request, handler: H) -> Response
 where
-    H: Handler + Clone + Send,
+    H: Handler + Send,
 {
     let id = request.get_id();
 
@@ -42,16 +42,45 @@ where
             handler.open(open.id, open.filename, open.pflags, open.attrs)
         ),
         Request::Close(close) => into_wrap!(id, handler.close(close.id, close.handle)),
+        Request::Read(read) => into_wrap!(
+            id,
+            handler.read(read.id, read.handle, read.offset, read.len)
+        ),
+        Request::Write(write) => into_wrap!(
+            id,
+            handler.write(write.id, write.handle, write.offset, write.data)
+        ),
         Request::Lstat(lstat) => into_wrap!(id, handler.lstat(lstat.id, lstat.path)),
+        Request::Fstat(fstat) => into_wrap!(id, handler.fstat(fstat.id, fstat.handle)),
+        Request::SetStat(setstat) => {
+            into_wrap!(id, handler.setstat(setstat.id, setstat.path, setstat.attrs))
+        }
+        Request::FSetStat(fsetstat) => into_wrap!(
+            id,
+            handler.fsetstat(fsetstat.id, fsetstat.handle, fsetstat.attrs)
+        ),
         Request::OpenDir(opendir) => into_wrap!(id, handler.opendir(opendir.id, opendir.path)),
         Request::ReadDir(readdir) => into_wrap!(id, handler.readdir(readdir.id, readdir.handle)),
+        Request::Remove(remove) => into_wrap!(id, handler.remove(remove.id, remove.filename)),
+        Request::Mkdir(mkdir) => into_wrap!(id, handler.mkdir(mkdir.id, mkdir.path, mkdir.attrs)),
+        Request::Rmdir(rmdir) => into_wrap!(id, handler.rmdir(rmdir.id, rmdir.path)),
         Request::RealPath(realpath) => into_wrap!(id, handler.realpath(realpath.id, realpath.path)),
+        Request::Stat(stat) => into_wrap!(id, handler.stat(stat.id, stat.path)),
+        Request::Rename(rename) => into_wrap!(
+            id,
+            handler.rename(rename.id, rename.oldpath, rename.newpath)
+        ),
+        Request::ReadLink(readlink) => into_wrap!(id, handler.readlink(readlink.id, readlink.path)),
+        Request::Symlink(symlink) => into_wrap!(
+            id,
+            handler.symlink(symlink.id, symlink.linkpath, symlink.targetpath)
+        ),
     }
 }
 
 async fn handler<H>(stream: &mut ChannelStream, handler: H) -> Result<(), Error>
 where
-    H: Handler + Clone + Send,
+    H: Handler + Send,
 {
     let mut bytes = read_buf(stream).await?;
 

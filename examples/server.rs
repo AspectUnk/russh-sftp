@@ -117,10 +117,7 @@ impl russh_sftp::server::Handler for SftpSession {
 
     async fn readdir(self, id: u32, handle: String) -> Result<Name, Self::Error> {
         info!("readdir handle: {}", handle);
-        Ok(Name {
-            id,
-            files: vec![],
-        })
+        Ok(Name { id, files: vec![] })
     }
 
     async fn realpath(self, id: u32, path: String) -> Result<Name, Self::Error> {

@@ -1,10 +1,19 @@
 mod attrs;
+mod data;
 mod handle;
+mod handle_attrs;
 mod init;
 mod name;
 mod open;
 mod path;
+mod path_attrs;
+mod read;
+mod remove;
+mod rename;
 mod status;
+mod symlink;
+mod version;
+mod write;
 
 use bytes::{BufMut, Bytes, BytesMut};
 
@@ -12,42 +21,24 @@ use crate::{buf::TryBuf, error::Error};
 
 pub use self::{
     attrs::Attrs,
+    data::Data,
     handle::Handle,
-    init::{Init, Version},
+    handle_attrs::HandleAttrs,
+    init::Init,
     name::{File, Name},
     open::{Open, OpenFlags},
     path::Path,
+    path_attrs::PathAttrs,
+    read::Read,
+    remove::Remove,
+    rename::Rename,
     status::{Status, StatusCode},
+    symlink::Symlink,
+    version::Version,
+    write::Write,
 };
 
 pub const VERSION: u32 = 3;
-
-pub const SSH_FXP_INIT: u8 = 1;
-pub const SSH_FXP_VERSION: u8 = 2;
-pub const SSH_FXP_OPEN: u8 = 3;
-pub const SSH_FXP_CLOSE: u8 = 4;
-pub const SSH_FXP_READ: u8 = 5;
-pub const SSH_FXP_WRITE: u8 = 6;
-pub const SSH_FXP_LSTAT: u8 = 7;
-pub const SSH_FXP_FSTAT: u8 = 8;
-pub const SSH_FXP_SETSTAT: u8 = 9;
-pub const SSH_FXP_FSETSTAT: u8 = 10;
-pub const SSH_FXP_OPENDIR: u8 = 11;
-pub const SSH_FXP_READDIR: u8 = 12;
-pub const SSH_FXP_REMOVE: u8 = 13;
-pub const SSH_FXP_MKDIR: u8 = 14;
-pub const SSH_FXP_RMDIR: u8 = 15;
-pub const SSH_FXP_REALPATH: u8 = 16;
-pub const SSH_FXP_STAT: u8 = 17;
-pub const SSH_FXP_RENAME: u8 = 18;
-pub const SSH_FXP_READLINK: u8 = 19;
-pub const SSH_FXP_SYMLINK: u8 = 20;
-
-pub const SSH_FXP_STATUS: u8 = 101;
-pub const SSH_FXP_HANDLE: u8 = 102;
-pub const SSH_FXP_DATA: u8 = 103;
-pub const SSH_FXP_NAME: u8 = 104;
-pub const SSH_FXP_ATTRS: u8 = 105;
 
 pub const SSH_FXP_EXTENDED: u8 = 200;
 pub const SSH_FXP_EXTENDED_REPLY: u8 = 201;
@@ -85,10 +76,22 @@ pub(crate) enum Request {
     Init(Init),
     Open(Open),
     Close(Handle),
+    Read(Read),
+    Write(Write),
     Lstat(Path),
+    Fstat(Handle),
+    SetStat(PathAttrs),
+    FSetStat(HandleAttrs),
     OpenDir(Path),
     ReadDir(Handle),
+    Remove(Remove),
+    Mkdir(PathAttrs),
+    Rmdir(Path),
     RealPath(Path),
+    Stat(Path),
+    Rename(Rename),
+    ReadLink(Path),
+    Symlink(Symlink),
 }
 
 impl Request {
@@ -96,10 +99,22 @@ impl Request {
         match self {
             Self::Open(open) => open.get_id(),
             Self::Close(close) => close.get_id(),
+            Self::Read(read) => read.get_id(),
+            Self::Write(write) => write.get_id(),
             Self::Lstat(lstat) => lstat.get_id(),
+            Self::Fstat(fstat) => fstat.get_id(),
+            Self::SetStat(setstat) => setstat.get_id(),
+            Self::FSetStat(fsetstat) => fsetstat.get_id(),
             Self::OpenDir(opendir) => opendir.get_id(),
             Self::ReadDir(readdir) => readdir.get_id(),
+            Self::Remove(remove) => remove.get_id(),
+            Self::Mkdir(mkdir) => mkdir.get_id(),
+            Self::Rmdir(rmdir) => rmdir.get_id(),
             Self::RealPath(realpath) => realpath.get_id(),
+            Self::Stat(stat) => stat.get_id(),
+            Self::Rename(rename) => rename.get_id(),
+            Self::ReadLink(readlink) => readlink.get_id(),
+            Self::Symlink(symlink) => symlink.get_id(),
             _ => 0,
         }
     }
@@ -113,13 +128,25 @@ impl TryFrom<&mut Bytes> for Request {
         debug!("packet type {}", r#type);
 
         let request = match r#type {
-            SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
-            SSH_FXP_OPEN => Self::Open(Open::try_from(bytes)?),
-            SSH_FXP_CLOSE => Self::Close(Handle::try_from(bytes)?),
-            SSH_FXP_LSTAT => Self::Lstat(Path::try_from(bytes)?),
-            SSH_FXP_OPENDIR => Self::OpenDir(Path::try_from(bytes)?),
-            SSH_FXP_READDIR => Self::ReadDir(Handle::try_from(bytes)?),
-            SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
+            1 => Self::Init(Init::try_from(bytes)?),
+            3 => Self::Open(Open::try_from(bytes)?),
+            4 => Self::Close(Handle::try_from(bytes)?),
+            5 => Self::Read(Read::try_from(bytes)?),
+            6 => Self::Write(Write::try_from(bytes)?),
+            7 => Self::Lstat(Path::try_from(bytes)?),
+            8 => Self::Fstat(Handle::try_from(bytes)?),
+            9 => Self::SetStat(PathAttrs::try_from(bytes)?),
+            10 => Self::FSetStat(HandleAttrs::try_from(bytes)?),
+            11 => Self::OpenDir(Path::try_from(bytes)?),
+            12 => Self::ReadDir(Handle::try_from(bytes)?),
+            13 => Self::Remove(Remove::try_from(bytes)?),
+            14 => Self::Mkdir(PathAttrs::try_from(bytes)?),
+            15 => Self::Rmdir(Path::try_from(bytes)?),
+            16 => Self::RealPath(Path::try_from(bytes)?),
+            17 => Self::Stat(Path::try_from(bytes)?),
+            18 => Self::Rename(Rename::try_from(bytes)?),
+            19 => Self::ReadLink(Path::try_from(bytes)?),
+            20 => Self::Symlink(Symlink::try_from(bytes)?),
             _ => return Err(Error::BadMessage),
         };
 
@@ -132,6 +159,7 @@ pub(crate) enum Response {
     Version(Version),
     Status(Status),
     Handle(Handle),
+    Data(Data),
     Name(Name),
     Attrs(Attrs),
 }
@@ -154,11 +182,12 @@ impl Response {
 impl From<Response> for Bytes {
     fn from(response: Response) -> Self {
         let (r#type, payload): (u8, Bytes) = match response {
-            Response::Version(version) => (SSH_FXP_VERSION, version.into()),
-            Response::Status(status) => (SSH_FXP_STATUS, status.into()),
-            Response::Handle(handle) => (SSH_FXP_HANDLE, handle.into()),
-            Response::Name(name) => (SSH_FXP_NAME, name.into()),
-            Response::Attrs(attrs) => (SSH_FXP_ATTRS, attrs.into()),
+            Response::Version(version) => (2, version.into()),
+            Response::Status(status) => (101, status.into()),
+            Response::Handle(handle) => (102, handle.into()),
+            Response::Data(data) => (103, data.into()),
+            Response::Name(name) => (104, name.into()),
+            Response::Attrs(attrs) => (105, attrs.into()),
         };
 
         let length = payload.len() as u32 + 1;
