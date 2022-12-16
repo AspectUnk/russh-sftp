@@ -14,3 +14,4 @@ pub mod file;
 pub mod protocol;
 /// Server side
 pub mod server;
+mod utils;

@@ -1,11 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use chrono::{DateTime, Utc};
-use std::{
-    fs::Metadata,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{fs::Metadata, time::UNIX_EPOCH};
 
-use crate::{buf::TryBuf, error};
+use crate::{buf::TryBuf, error, utils};
 
 bitflags! {
     /// Attributes flags according to the specification
@@ -31,10 +27,11 @@ bitflags! {
 }
 
 /// Used in the implementation of other packages.
-/// 
-/// Has From<Metadata> for simple conversion of file info
-/// into file attributes
-/// 
+///
+/// The fields `user` and `group` are string names of users
+/// and groups for clients that can be displayed from longname.
+/// Can be omitted.
+///
 /// The `flags` field is omitted because it
 /// is set by itself depending on the flags
 #[derive(Debug)]
@@ -50,19 +47,19 @@ pub struct FileAttributes {
 }
 
 impl FileAttributes {
-    /// If is a folder
+    /// Returns `true` if is a folder
     pub fn is_dir(&self) -> bool {
         self.permissions
             .map_or(false, |b| FileMode { bits: b }.contains(FileMode::DIR))
     }
 
-    /// If is a regular
+    /// Returns `true` if is a regular file
     pub fn is_regular(&self) -> bool {
         self.permissions
             .map_or(false, |b| FileMode { bits: b }.contains(FileMode::REG))
     }
 
-    /// If is a symlink
+    /// Returns `true` if is a symlink
     pub fn is_symlink(&self) -> bool {
         self.permissions
             .map_or(false, |b| FileMode { bits: b }.contains(FileMode::LNK))
@@ -103,12 +100,9 @@ impl FileAttributes {
             false => self.remove_type(FileMode::LNK),
         }
     }
-
-    fn unix(&self, time: SystemTime) -> u32 {
-        DateTime::<Utc>::from(time).timestamp() as u32
-    }
 }
 
+/// For packets which require dummy attributes
 impl Default for FileAttributes {
     fn default() -> Self {
         Self {
@@ -124,6 +118,9 @@ impl Default for FileAttributes {
     }
 }
 
+/// For simple conversion of `Metadata` into file attributes
+/// 
+/// Support `MetadataExt` will be added later
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
         let mut attrs = Self::default();
@@ -138,8 +135,8 @@ impl From<&Metadata> for FileAttributes {
         attrs.set_dir(metadata.is_dir());
         attrs.set_regular(!metadata.is_dir());
 
-        attrs.atime = Some(attrs.unix(metadata.modified().unwrap_or(UNIX_EPOCH)));
-        attrs.mtime = Some(attrs.unix(metadata.accessed().unwrap_or(UNIX_EPOCH)));
+        attrs.atime = Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH)));
+        attrs.mtime = Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH)));
 
         attrs
     }
