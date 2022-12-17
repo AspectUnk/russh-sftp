@@ -1,8 +1,7 @@
 mod handler;
 
 use bytes::Bytes;
-use russh::{server::Msg, Channel, ChannelStream};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 pub use self::handler::Handler;
 
@@ -20,7 +19,10 @@ macro_rules! into_wrap {
     };
 }
 
-async fn read_buf(stream: &mut ChannelStream) -> Result<Bytes, Error> {
+async fn read_buf<S>(stream: &mut S) -> Result<Bytes, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let length = stream.read_u32().await?;
 
     let mut buf = vec![0; length as usize];
@@ -82,9 +84,10 @@ where
     }
 }
 
-async fn process_handler<H>(stream: &mut ChannelStream, handler: &mut H) -> Result<(), Error>
+async fn process_handler<H, S>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
     H: Handler + Send,
+    S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut bytes = read_buf(stream).await?;
 
@@ -100,12 +103,11 @@ where
 }
 
 /// Run processing channel as SFTP
-pub async fn run<H>(channel: Channel<Msg>, mut handler: H)
+pub async fn run<H, S>(mut stream: S, mut handler: H)
 where
     H: Handler + Send + 'static,
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let channel_id = channel.id();
-    let mut stream = channel.into_stream();
     tokio::spawn(async move {
         loop {
             match process_handler(&mut stream, &mut handler).await {
@@ -115,6 +117,6 @@ where
             }
         }
 
-        debug!("sftp stream #{} ended", channel_id);
+        debug!("sftp stream ended");
     });
 }
