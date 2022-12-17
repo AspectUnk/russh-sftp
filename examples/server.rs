@@ -10,34 +10,50 @@ use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
-struct Server {
-    clients: Arc<Mutex<HashMap<(usize, ChannelId), Channel<Msg>>>>,
-    id: usize,
-}
+struct Server;
 
-impl Server {
-    pub async fn get_channel(&mut self, channel_id: ChannelId) -> Channel<Msg> {
-        let mut clients = self.clients.lock().await;
-        clients.remove(&(self.id, channel_id)).unwrap()
+impl russh::server::Server for Server {
+    type Handler = SshSession;
+
+    fn new_client(&mut self, _: Option<SocketAddr>) -> Self::Handler {
+        SshSession::default()
     }
 }
 
-impl russh::server::Server for Server {
-    type Handler = Self;
+struct SshSession {
+    clients: Arc<Mutex<HashMap<ChannelId, Channel<Msg>>>>,
+}
 
-    fn new_client(&mut self, _: Option<SocketAddr>) -> Self::Handler {
-        let s = self.clone();
-        self.id += 1;
-        s
+impl Default for SshSession {
+    fn default() -> Self {
+        Self {
+            clients: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+}
+
+impl SshSession {
+    pub async fn get_channel(&mut self, channel_id: ChannelId) -> Channel<Msg> {
+        let mut clients = self.clients.lock().await;
+        clients.remove(&channel_id).unwrap()
     }
 }
 
 #[async_trait]
-impl russh::server::Handler for Server {
+impl russh::server::Handler for SshSession {
     type Error = anyhow::Error;
 
     async fn auth_password(self, user: &str, password: &str) -> Result<(Self, Auth), Self::Error> {
         info!("credentials: {}, {}", user, password);
+        Ok((self, Auth::Accept))
+    }
+
+    async fn auth_publickey(
+        self,
+        user: &str,
+        public_key: &russh_keys::key::PublicKey,
+    ) -> Result<(Self, Auth), Self::Error> {
+        info!("credentials: {}, {:?}", user, public_key);
         Ok((self, Auth::Accept))
     }
 
@@ -48,7 +64,7 @@ impl russh::server::Handler for Server {
     ) -> Result<(Self, bool, Session), Self::Error> {
         {
             let mut clients = self.clients.lock().await;
-            clients.insert((self.id, channel.id()), channel);
+            clients.insert(channel.id(), channel);
         }
         Ok((self, true, session))
     }
@@ -63,11 +79,9 @@ impl russh::server::Handler for Server {
 
         if name == "sftp" {
             let channel = self.get_channel(channel_id).await;
-            let sftp = SftpSession { version: None };
-
-            russh_sftp::server::run(channel, sftp).await;
-
+            let sftp = SftpSession::default();
             session.channel_success(channel_id);
+            russh_sftp::server::run(channel.into_stream(), sftp).await;
         } else {
             session.channel_failure(channel_id);
         }
@@ -78,6 +92,16 @@ impl russh::server::Handler for Server {
 
 struct SftpSession {
     version: Option<u32>,
+    root_dir_read_done: bool,
+}
+
+impl Default for SftpSession {
+    fn default() -> Self {
+        Self {
+            version: None,
+            root_dir_read_done: false,
+        }
+    }
 }
 
 #[async_trait]
@@ -114,14 +138,28 @@ impl russh_sftp::server::Handler for SftpSession {
 
     async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
         info!("opendir: {}", path);
-        Ok(Handle {
-            id,
-            handle: "1".to_string(),
-        })
+        self.root_dir_read_done = false;
+        Ok(Handle { id, handle: path })
     }
 
     async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
         info!("readdir handle: {}", handle);
+        if handle == "/" && !self.root_dir_read_done {
+            self.root_dir_read_done = true;
+            return Ok(Name {
+                id,
+                files: vec![
+                    File {
+                        filename: "foo".to_string(),
+                        attrs: FileAttributes::default(),
+                    },
+                    File {
+                        filename: "bar".to_string(),
+                        attrs: FileAttributes::default(),
+                    },
+                ],
+            });
+        }
         Ok(Name { id, files: vec![] })
     }
 
@@ -151,12 +189,19 @@ async fn main() {
         ..Default::default()
     };
 
-    let server = Server {
-        clients: Arc::new(Mutex::new(HashMap::new())),
-        id: 0,
-    };
+    let server = Server;
 
-    russh::server::run(Arc::new(config), ("0.0.0.0", 22), server)
-        .await
-        .unwrap();
+    russh::server::run(
+        Arc::new(config),
+        (
+            "0.0.0.0",
+            std::env::var("PORT")
+                .unwrap_or("22".to_string())
+                .parse()
+                .unwrap(),
+        ),
+        server,
+    )
+    .await
+    .unwrap();
 }
