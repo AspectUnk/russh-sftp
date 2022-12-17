@@ -1,5 +1,5 @@
 # Russh SFTP
-Crate for [Russh](https://github.com/warp-tech/russh) to support the SFTP server and client subsystem.\
+SFTP subsystem supported server and client for Russh
 Implemented according to [version 3 specifications](https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt) (most popular)
 
 ## Examples
