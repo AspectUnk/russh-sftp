@@ -1,6 +1,6 @@
 [package]
 name = "russh-sftp"
-version = "0.3.0"
+version = "1.0.0"
 edition = "2021"
 description = "SFTP subsystem supported server and client for Russh"
 readme = "README.md"
