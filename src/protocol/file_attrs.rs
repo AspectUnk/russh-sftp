@@ -119,24 +119,24 @@ impl Default for FileAttributes {
 }
 
 /// For simple conversion of `Metadata` into file attributes
-/// 
+///
 /// Support `MetadataExt` will be added later
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
-        let mut attrs = Self::default();
-
-        attrs.size = Some(metadata.len());
-        attrs.permissions = Some(if metadata.permissions().readonly() {
-            0o555
-        } else {
-            0o777
-        });
+        let mut attrs = Self {
+            size: Some(metadata.len()),
+            permissions: Some(if metadata.permissions().readonly() {
+                0o555
+            } else {
+                0o777
+            }),
+            atime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
+            mtime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
+            ..Default::default()
+        };
 
         attrs.set_dir(metadata.is_dir());
         attrs.set_regular(!metadata.is_dir());
-
-        attrs.atime = Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH)));
-        attrs.mtime = Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH)));
 
         attrs
     }
