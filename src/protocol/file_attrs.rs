@@ -109,8 +109,6 @@ impl Default for FileAttributes {
 }
 
 /// For simple conversion of `Metadata` into file attributes
-///
-/// Support `MetadataExt` will be added later
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
         let mut attrs = Self {
