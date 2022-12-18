@@ -17,7 +17,6 @@ num-derive = "0.3"
 num-traits = "0.2"
 num = "0.4"
 
-futures = "0.3"
 async-trait = "0.1"
 thiserror = "1.0"
 bitflags = "1.3"
