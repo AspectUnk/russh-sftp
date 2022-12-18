@@ -1,5 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
 use std::{fs::Metadata, time::UNIX_EPOCH};
+#[cfg(unix)]
+use std::os::unix::fs::MetadataExt;
 
 use crate::{buf::TryBuf, error, utils};
 
@@ -77,13 +79,13 @@ impl FileAttributes {
     impl_mode!(is_block, set_block, "block", BLK);
     impl_mode!(is_fifo, set_fifo, "fifo", FIFO);
 
-    /// Set mode flag
+    /// Set type flag
     pub fn set_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
         self.permissions = Some(perms | r#type.bits);
     }
 
-    /// Remove mode flag
+    /// Remove type flag
     pub fn remove_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
         self.permissions = Some(perms & !r#type.bits);
@@ -113,11 +115,17 @@ impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
         let mut attrs = Self {
             size: Some(metadata.len()),
+            #[cfg(unix)]
+            uid: Some(metadata.uid()),
+            #[cfg(unix)]
+            gid: Some(metadata.gid()),
+            #[cfg(windows)]
             permissions: Some(if metadata.permissions().readonly() {
                 0o555
             } else {
                 0o777
             }),
+            permissions: Some(metadata.mode()),
             atime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
             mtime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
             ..Default::default()
