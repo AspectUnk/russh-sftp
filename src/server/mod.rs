@@ -102,11 +102,11 @@ where
     Ok(())
 }
 
-/// Run processing channel as SFTP
-pub async fn run<H, S>(mut stream: S, mut handler: H)
+/// Run processing stream as SFTP
+pub async fn run<S, H>(mut stream: S, mut handler: H)
 where
-    H: Handler + Send + 'static,
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    H: Handler + Send + 'static,
 {
     tokio::spawn(async move {
         loop {

@@ -6,16 +6,16 @@ use crate::{buf::TryBuf, error, utils};
 bitflags! {
     /// Attributes flags according to the specification
     #[derive(Default)]
-    pub struct FileAttrFlags: u32 {
+    pub struct FileAttr: u32 {
         const SIZE = 0x00000001;
         const UIDGID = 0x00000002;
         const PERMISSIONS = 0x00000004;
         const ACMODTIME = 0x00000008;
     }
 
-    /// Modes according to unix
+    /// Types according to mode unix
     #[derive(Default)]
-    pub struct FileMode: u32 {
+    pub struct FileType: u32 {
         const FIFO = 0x1000;
         const CHR = 0x2000;
         const DIR = 0x4000;
@@ -24,6 +24,8 @@ bitflags! {
         const LNK = 0xA000;
         const NAM = 0x5000;
     }
+
+    // TODO: Add FilePermission
 }
 
 /// Used in the implementation of other packages.
@@ -46,59 +48,45 @@ pub struct FileAttributes {
     pub mtime: Option<u32>,
 }
 
+macro_rules! impl_mode {
+    ($get_name:ident, $set_name:ident, $doc_name:expr, $flag:ident) => {
+        #[doc = "Returns `true` if is a "]
+        #[doc = $doc_name]
+        pub fn $get_name(&self) -> bool {
+            self.permissions
+                .map_or(false, |b| FileType { bits: b }.contains(FileType::$flag))
+        }
+
+        #[doc = "Set flag if is a "]
+        #[doc = $doc_name]
+        #[doc = " or not"]
+        pub fn $set_name(&mut self, $get_name: bool) {
+            match $get_name {
+                true => self.set_type(FileType::$flag),
+                false => self.remove_type(FileType::$flag),
+            }
+        }
+    };
+}
+
 impl FileAttributes {
-    /// Returns `true` if is a folder
-    pub fn is_dir(&self) -> bool {
-        self.permissions
-            .map_or(false, |b| FileMode { bits: b }.contains(FileMode::DIR))
-    }
-
-    /// Returns `true` if is a regular file
-    pub fn is_regular(&self) -> bool {
-        self.permissions
-            .map_or(false, |b| FileMode { bits: b }.contains(FileMode::REG))
-    }
-
-    /// Returns `true` if is a symlink
-    pub fn is_symlink(&self) -> bool {
-        self.permissions
-            .map_or(false, |b| FileMode { bits: b }.contains(FileMode::LNK))
-    }
+    impl_mode!(is_dir, set_dir, "dir", DIR);
+    impl_mode!(is_regular, set_regular, "regular", REG);
+    impl_mode!(is_symlink, set_symlink, "symlink", LNK);
+    impl_mode!(is_character, set_character, "character", CHR);
+    impl_mode!(is_block, set_block, "block", BLK);
+    impl_mode!(is_fifo, set_fifo, "fifo", FIFO);
 
     /// Set mode flag
-    pub fn set_type(&mut self, r#type: FileMode) {
+    pub fn set_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
         self.permissions = Some(perms | r#type.bits);
     }
 
     /// Remove mode flag
-    pub fn remove_type(&mut self, r#type: FileMode) {
+    pub fn remove_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
         self.permissions = Some(perms & !r#type.bits);
-    }
-
-    /// Set flag if is a dir or not
-    pub fn set_dir(&mut self, is_dir: bool) {
-        match is_dir {
-            true => self.set_type(FileMode::DIR),
-            false => self.remove_type(FileMode::DIR),
-        }
-    }
-
-    /// Set flag if is a regular or not
-    pub fn set_regular(&mut self, is_regular: bool) {
-        match is_regular {
-            true => self.set_type(FileMode::REG),
-            false => self.remove_type(FileMode::REG),
-        }
-    }
-
-    /// Set flag if is a symlink or not
-    pub fn set_symlink(&mut self, is_symlink: bool) {
-        match is_symlink {
-            true => self.set_type(FileMode::LNK),
-            false => self.remove_type(FileMode::LNK),
-        }
     }
 }
 
@@ -111,7 +99,7 @@ impl Default for FileAttributes {
             user: None,
             gid: Some(0),
             group: None,
-            permissions: Some(0o777 | FileMode::DIR.bits),
+            permissions: Some(0o777 | FileType::DIR.bits),
             atime: Some(0),
             mtime: Some(0),
         }
@@ -144,22 +132,22 @@ impl From<&Metadata> for FileAttributes {
 
 impl From<&FileAttributes> for Bytes {
     fn from(file_attrs: &FileAttributes) -> Self {
-        let mut attrs = FileAttrFlags::default();
+        let mut attrs = FileAttr::default();
 
         if file_attrs.size.is_some() {
-            attrs |= FileAttrFlags::SIZE;
+            attrs |= FileAttr::SIZE;
         }
 
         if file_attrs.uid.is_some() || file_attrs.gid.is_some() {
-            attrs |= FileAttrFlags::UIDGID;
+            attrs |= FileAttr::UIDGID;
         }
 
         if file_attrs.permissions.is_some() {
-            attrs |= FileAttrFlags::PERMISSIONS;
+            attrs |= FileAttr::PERMISSIONS;
         }
 
         if file_attrs.atime.is_some() || file_attrs.mtime.is_some() {
-            attrs |= FileAttrFlags::ACMODTIME;
+            attrs |= FileAttr::ACMODTIME;
         }
 
         let mut bytes = BytesMut::new();
@@ -192,39 +180,39 @@ impl TryFrom<&mut Bytes> for FileAttributes {
     type Error = error::Error;
 
     fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        let attrs = FileAttrFlags {
+        let attrs = FileAttr {
             bits: bytes.try_get_u32()?,
         };
 
         Ok(Self {
-            size: if attrs.contains(FileAttrFlags::SIZE) {
+            size: if attrs.contains(FileAttr::SIZE) {
                 Some(bytes.try_get_u64()?)
             } else {
                 None
             },
-            uid: if attrs.contains(FileAttrFlags::UIDGID) {
+            uid: if attrs.contains(FileAttr::UIDGID) {
                 Some(bytes.try_get_u32()?)
             } else {
                 None
             },
             user: None,
-            gid: if attrs.contains(FileAttrFlags::UIDGID) {
+            gid: if attrs.contains(FileAttr::UIDGID) {
                 Some(bytes.try_get_u32()?)
             } else {
                 None
             },
             group: None,
-            permissions: if attrs.contains(FileAttrFlags::PERMISSIONS) {
+            permissions: if attrs.contains(FileAttr::PERMISSIONS) {
                 Some(bytes.try_get_u32()?)
             } else {
                 None
             },
-            atime: if attrs.contains(FileAttrFlags::ACMODTIME) {
+            atime: if attrs.contains(FileAttr::ACMODTIME) {
                 Some(bytes.try_get_u32()?)
             } else {
                 None
             },
-            mtime: if attrs.contains(FileAttrFlags::ACMODTIME) {
+            mtime: if attrs.contains(FileAttr::ACMODTIME) {
                 Some(bytes.try_get_u32()?)
             } else {
                 None

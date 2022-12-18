@@ -27,7 +27,7 @@ pub use self::{
     data::Data,
     extended::Extended,
     extended_reply::ExtendedReply,
-    file_attrs::{FileAttrFlags, FileAttributes, FileMode},
+    file_attrs::{FileAttr, FileAttributes, FileType},
     handle::Handle,
     handle_attrs::HandleAttrs,
     init::Init,

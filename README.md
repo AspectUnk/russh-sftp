@@ -14,7 +14,6 @@ Implemented according to [version 3 specifications](https://filezilla-project.or
 - [x] Server side
 - [x] Simple server example
 - [ ] Error handler (unlike specification)
-- [ ] Checking for compliance specification
 - [ ] Full server example
 - [ ] Unit tests
 - [ ] Workflow
