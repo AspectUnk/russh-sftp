@@ -50,7 +50,7 @@ pub struct FileAttributes {
     pub mtime: Option<u32>,
 }
 
-macro_rules! impl_mode {
+macro_rules! impl_fn_type {
     ($get_name:ident, $set_name:ident, $doc_name:expr, $flag:ident) => {
         #[doc = "Returns `true` if is a "]
         #[doc = $doc_name]
@@ -72,12 +72,12 @@ macro_rules! impl_mode {
 }
 
 impl FileAttributes {
-    impl_mode!(is_dir, set_dir, "dir", DIR);
-    impl_mode!(is_regular, set_regular, "regular", REG);
-    impl_mode!(is_symlink, set_symlink, "symlink", LNK);
-    impl_mode!(is_character, set_character, "character", CHR);
-    impl_mode!(is_block, set_block, "block", BLK);
-    impl_mode!(is_fifo, set_fifo, "fifo", FIFO);
+    impl_fn_type!(is_dir, set_dir, "dir", DIR);
+    impl_fn_type!(is_regular, set_regular, "regular", REG);
+    impl_fn_type!(is_symlink, set_symlink, "symlink", LNK);
+    impl_fn_type!(is_character, set_character, "character", CHR);
+    impl_fn_type!(is_block, set_block, "block", BLK);
+    impl_fn_type!(is_fifo, set_fifo, "fifo", FIFO);
 
     /// Set type flag
     pub fn set_type(&mut self, r#type: FileType) {
