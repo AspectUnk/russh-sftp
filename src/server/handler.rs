@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{
-    protocol::{Attrs, Data, ExtendedReply, Handle, Name, OpenFlags, Status, StatusCode, Version, FileAttributes},
+use crate::protocol::{
+    Attrs, Data, ExtendedReply, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode,
+    Version,
 };
 
 /// Server handler for each client. This is `async_trait`
@@ -88,7 +89,7 @@ pub trait Handler: Sized {
         id: u32,
         path: String,
         attrs: FileAttributes,
-    ) -> Result<Attrs, Self::Error> {
+    ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -99,7 +100,7 @@ pub trait Handler: Sized {
         id: u32,
         handle: String,
         attrs: FileAttributes,
-    ) -> Result<Attrs, Self::Error> {
+    ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 
