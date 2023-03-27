@@ -55,7 +55,8 @@ impl From<u32> for StatusCode {
     }
 }
 
-/// Implementation for SSH_FXP_STATUS
+/// Implementation for SSH_FXP_STATUS as defined in the specification draft
+/// https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt on page 19 (part 7)
 #[derive(Debug, PartialEq, Eq)]
 pub struct Status {
     pub id: u32,
