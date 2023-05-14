@@ -1,7 +1,7 @@
 use bytes::{BufMut, Bytes, BytesMut};
-use std::{fs::Metadata, time::UNIX_EPOCH};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
+use std::{fs::Metadata, time::UNIX_EPOCH};
 
 use crate::{buf::TryBuf, error, utils};
 
@@ -55,8 +55,9 @@ macro_rules! impl_fn_type {
         #[doc = "Returns `true` if is a "]
         #[doc = $doc_name]
         pub fn $get_name(&self) -> bool {
-            self.permissions
-                .map_or(false, |b| FileType { bits: b }.contains(FileType::$flag))
+            self.permissions.map_or(false, |b| {
+                FileType::from_bits_truncate(b).contains(FileType::$flag)
+            })
         }
 
         #[doc = "Set flag if is a "]
@@ -82,13 +83,13 @@ impl FileAttributes {
     /// Set type flag
     pub fn set_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms | r#type.bits);
+        self.permissions = Some(perms | r#type.bits());
     }
 
     /// Remove type flag
     pub fn remove_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms & !r#type.bits);
+        self.permissions = Some(perms & !r#type.bits());
     }
 }
 
@@ -101,7 +102,7 @@ impl Default for FileAttributes {
             user: None,
             gid: Some(0),
             group: None,
-            permissions: Some(0o777 | FileType::DIR.bits),
+            permissions: Some(0o777 | FileType::DIR.bits()),
             atime: Some(0),
             mtime: Some(0),
         }
@@ -159,7 +160,7 @@ impl From<&FileAttributes> for Bytes {
 
         let mut bytes = BytesMut::new();
 
-        bytes.put_u32(attrs.bits);
+        bytes.put_u32(attrs.bits());
 
         if let Some(size) = file_attrs.size {
             bytes.put_u64(size);
@@ -187,9 +188,7 @@ impl TryFrom<&mut Bytes> for FileAttributes {
     type Error = error::Error;
 
     fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        let attrs = FileAttr {
-            bits: bytes.try_get_u32()?,
-        };
+        let attrs = FileAttr::from_bits_truncate(bytes.try_get_u32()?);
 
         Ok(Self {
             size: if attrs.contains(FileAttr::SIZE) {

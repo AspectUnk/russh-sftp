@@ -2,11 +2,11 @@ use bytes::Bytes;
 
 use crate::{buf::TryBuf, error};
 
-use super::{impl_request_id, RequestId, FileAttributes};
+use super::{impl_request_id, FileAttributes, RequestId};
 
 bitflags! {
     /// Opening flags according to the specification
-    #[derive(Default)]
+    #[derive(Debug, Default)]
     pub struct OpenFlags: u32 {
         const READ = 0x00000001;
         const WRITE = 0x00000002;
@@ -35,9 +35,7 @@ impl TryFrom<&mut Bytes> for Open {
         Ok(Self {
             id: bytes.try_get_u32()?,
             filename: bytes.try_get_string()?,
-            pflags: OpenFlags {
-                bits: bytes.try_get_u32()?,
-            },
+            pflags: OpenFlags::from_bits_truncate(bytes.try_get_u32()?),
             attrs: FileAttributes::try_from(bytes)?,
         })
     }
