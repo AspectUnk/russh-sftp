@@ -11,8 +11,8 @@ use crate::{
 };
 
 macro_rules! into_wrap {
-    ($id:expr, $handler:expr) => {
-        match $handler.await {
+    ($id:expr, $handler:expr, $var:ident; $($arg:ident),*) => {
+        match $handler.$var($($var.$arg),*).await {
             Err(err) => Response::error($id, err.into()),
             Ok(packet) => packet.into(),
         }
@@ -38,49 +38,26 @@ where
     let id = request.get_request_id();
 
     match request {
-        Request::Init(init) => into_wrap!(id, handler.init(init.version, init.extensions)),
-        Request::Open(open) => into_wrap!(
-            id,
-            handler.open(open.id, open.filename, open.pflags, open.attrs)
-        ),
-        Request::Close(close) => into_wrap!(id, handler.close(close.id, close.handle)),
-        Request::Read(read) => into_wrap!(
-            id,
-            handler.read(read.id, read.handle, read.offset, read.len)
-        ),
-        Request::Write(write) => into_wrap!(
-            id,
-            handler.write(write.id, write.handle, write.offset, write.data)
-        ),
-        Request::Lstat(lstat) => into_wrap!(id, handler.lstat(lstat.id, lstat.path)),
-        Request::Fstat(fstat) => into_wrap!(id, handler.fstat(fstat.id, fstat.handle)),
-        Request::SetStat(setstat) => {
-            into_wrap!(id, handler.setstat(setstat.id, setstat.path, setstat.attrs))
-        }
-        Request::FSetStat(fsetstat) => into_wrap!(
-            id,
-            handler.fsetstat(fsetstat.id, fsetstat.handle, fsetstat.attrs)
-        ),
-        Request::OpenDir(opendir) => into_wrap!(id, handler.opendir(opendir.id, opendir.path)),
-        Request::ReadDir(readdir) => into_wrap!(id, handler.readdir(readdir.id, readdir.handle)),
-        Request::Remove(remove) => into_wrap!(id, handler.remove(remove.id, remove.filename)),
-        Request::Mkdir(mkdir) => into_wrap!(id, handler.mkdir(mkdir.id, mkdir.path, mkdir.attrs)),
-        Request::Rmdir(rmdir) => into_wrap!(id, handler.rmdir(rmdir.id, rmdir.path)),
-        Request::RealPath(realpath) => into_wrap!(id, handler.realpath(realpath.id, realpath.path)),
-        Request::Stat(stat) => into_wrap!(id, handler.stat(stat.id, stat.path)),
-        Request::Rename(rename) => into_wrap!(
-            id,
-            handler.rename(rename.id, rename.oldpath, rename.newpath)
-        ),
-        Request::ReadLink(readlink) => into_wrap!(id, handler.readlink(readlink.id, readlink.path)),
-        Request::Symlink(symlink) => into_wrap!(
-            id,
-            handler.symlink(symlink.id, symlink.linkpath, symlink.targetpath)
-        ),
-        Request::Extended(extended) => into_wrap!(
-            id,
-            handler.extended(extended.id, extended.request, extended.data)
-        ),
+        Request::Init(init) => into_wrap!(id, handler, init; version, extensions),
+        Request::Open(open) => into_wrap!(id, handler, open; id, filename, pflags, attrs),
+        Request::Close(close) => into_wrap!(id, handler, close; id, handle),
+        Request::Read(read) => into_wrap!(id, handler, read; id, handle, offset, len),
+        Request::Write(write) => into_wrap!(id, handler, write; id, handle, offset, data),
+        Request::Lstat(lstat) => into_wrap!(id, handler, lstat; id, path),
+        Request::Fstat(fstat) => into_wrap!(id, handler, fstat; id, handle),
+        Request::SetStat(setstat) => into_wrap!(id, handler, setstat; id, path, attrs),
+        Request::FSetStat(fsetstat) => into_wrap!(id, handler, fsetstat; id, handle, attrs),
+        Request::OpenDir(opendir) => into_wrap!(id, handler, opendir; id, path),
+        Request::ReadDir(readdir) => into_wrap!(id, handler, readdir; id, handle),
+        Request::Remove(remove) => into_wrap!(id, handler, remove; id, filename),
+        Request::Mkdir(mkdir) => into_wrap!(id, handler, mkdir; id, path, attrs),
+        Request::Rmdir(rmdir) => into_wrap!(id, handler, rmdir; id, path),
+        Request::RealPath(realpath) => into_wrap!(id, handler, realpath; id, path),
+        Request::Stat(stat) => into_wrap!(id, handler, stat; id, path),
+        Request::Rename(rename) => into_wrap!(id, handler, rename; id, oldpath, newpath),
+        Request::ReadLink(readlink) => into_wrap!(id, handler, readlink; id, path),
+        Request::Symlink(symlink) => into_wrap!(id, handler, symlink; id, linkpath, targetpath),
+        Request::Extended(extended) => into_wrap!(id, handler, extended; id, request, data),
     }
 }
 
