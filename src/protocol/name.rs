@@ -1,37 +1,20 @@
-use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
+use serde::{Serialize, ser::SerializeStruct};
 use std::time::{Duration, UNIX_EPOCH};
 
-use crate::{buf::PutBuf, protocol};
-
-use super::{impl_packet_for, FileAttributes};
+use super::{impl_packet_for, impl_request_id, Packet, RequestId, FileAttributes};
 
 /// Implementation for SSH_FXP_NAME
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Name {
     pub id: u32,
     pub files: Vec<File>,
 }
 
-impl_packet_for!(Name, protocol::Response);
+impl_request_id!(Name);
+impl_packet_for!(Name);
 
-impl From<Name> for Bytes {
-    fn from(name: Name) -> Self {
-        let mut bytes = BytesMut::new();
-
-        bytes.put_u32(name.id);
-        bytes.put_u32(name.files.len() as u32);
-
-        for file in &name.files {
-            let file = Bytes::from(file);
-            bytes.put_slice(&file);
-        }
-
-        bytes.freeze()
-    }
-}
-
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct File {
     pub filename: String,
     pub attrs: FileAttributes,
@@ -94,16 +77,15 @@ impl File {
     }
 }
 
-impl From<&File> for Bytes {
-    fn from(file: &File) -> Self {
-        let mut bytes = BytesMut::new();
-
-        bytes.put_str(&file.filename);
-        bytes.put_str(&file.longname());
-
-        let attrs = Bytes::from(&file.attrs);
-        bytes.put_slice(&attrs);
-
-        bytes.freeze()
+impl Serialize for File {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("File", 3)?;
+        s.serialize_field("filename", &self.filename)?;
+        s.serialize_field("longname", &self.longname())?;
+        s.serialize_field("attrs", &self.attrs)?;
+        s.end()
     }
 }

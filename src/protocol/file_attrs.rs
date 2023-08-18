@@ -1,23 +1,28 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use serde::{Serialize, ser::SerializeStruct};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::{fs::Metadata, time::UNIX_EPOCH};
 
 use crate::{buf::TryBuf, error, utils};
 
-bitflags! {
     /// Attributes flags according to the specification
-    #[derive(Default)]
-    pub struct FileAttr: u32 {
+#[derive(Default, Serialize, Deserialize)]
+pub struct FileAttr(u32);
+
+    /// Types according to mode unix
+#[derive(Default, Serialize, Deserialize)]
+pub struct FileType(u32);
+
+bitflags! {
+    impl FileAttr: u32 {
         const SIZE = 0x00000001;
         const UIDGID = 0x00000002;
         const PERMISSIONS = 0x00000004;
         const ACMODTIME = 0x00000008;
     }
 
-    /// Types according to mode unix
-    #[derive(Default)]
-    pub struct FileType: u32 {
+    impl FileType: u32 {
         const FIFO = 0x1000;
         const CHR = 0x2000;
         const DIR = 0x4000;
@@ -38,7 +43,7 @@ bitflags! {
 ///
 /// The `flags` field is omitted because it
 /// is set by itself depending on the flags
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub struct FileAttributes {
     pub size: Option<u64>,
     pub uid: Option<u32>,
@@ -138,6 +143,54 @@ impl From<&Metadata> for FileAttributes {
     }
 }
 
+impl Serialize for FileAttributes {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut s = serializer.serialize_struct("FileAttributes", 7)?;
+        let mut attrs = FileAttr::default();
+
+        if self.size.is_some() {
+            attrs |= FileAttr::SIZE;
+        }
+
+        if self.uid.is_some() || self.gid.is_some() {
+            attrs |= FileAttr::UIDGID;
+        }
+
+        if self.permissions.is_some() {
+            attrs |= FileAttr::PERMISSIONS;
+        }
+
+        if self.atime.is_some() || self.mtime.is_some() {
+            attrs |= FileAttr::ACMODTIME;
+        }
+
+        s.serialize_field("attrs", &attrs)?;
+
+        if let Some(size) = self.size {
+            s.serialize_field("size", &size)?;
+        }
+
+        if self.uid.is_some() || self.gid.is_some() {
+            s.serialize_field("uid", &self.uid.unwrap_or(0))?;
+            s.serialize_field("gid", &self.gid.unwrap_or(0))?;
+        }
+
+        if let Some(permissions) = self.permissions {
+            s.serialize_field("permissions", &permissions)?;
+        }
+
+        if self.atime.is_some() || self.mtime.is_some() {
+            s.serialize_field("atime", &self.atime.unwrap_or(0))?;
+            s.serialize_field("mtime", &self.mtime.unwrap_or(0))?;
+        }
+
+        s.end()
+    }
+}
+
 impl From<&FileAttributes> for Bytes {
     fn from(file_attrs: &FileAttributes) -> Self {
         let mut attrs = FileAttr::default();
@@ -177,7 +230,7 @@ impl From<&FileAttributes> for Bytes {
 
         if file_attrs.atime.is_some() || file_attrs.mtime.is_some() {
             bytes.put_u32(file_attrs.atime.unwrap_or(0));
-            bytes.put_u32(file_attrs.mtime.unwrap_or(0))
+            bytes.put_u32(file_attrs.mtime.unwrap_or(0));
         }
 
         bytes.freeze()

@@ -1,13 +1,11 @@
-use bytes::Bytes;
+use super::{impl_request_id, RequestId, FileAttributes};
 
-use crate::{buf::TryBuf, error};
-
-use super::{impl_request_id, FileAttributes, RequestId};
+/// Opening flags according to the specification
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct OpenFlags(u32);
 
 bitflags! {
-    /// Opening flags according to the specification
-    #[derive(Debug, Default)]
-    pub struct OpenFlags: u32 {
+    impl OpenFlags: u32 {
         const READ = 0x00000001;
         const WRITE = 0x00000002;
         const APPEND = 0x00000004;
@@ -18,7 +16,7 @@ bitflags! {
 }
 
 /// Implementation for SSH_FXP_OPEN
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     pub id: u32,
     pub filename: String,
@@ -27,16 +25,3 @@ pub struct Open {
 }
 
 impl_request_id!(Open);
-
-impl TryFrom<&mut Bytes> for Open {
-    type Error = error::Error;
-
-    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: bytes.try_get_u32()?,
-            filename: bytes.try_get_string()?,
-            pflags: OpenFlags::from_bits_truncate(bytes.try_get_u32()?),
-            attrs: FileAttributes::try_from(bytes)?,
-        })
-    }
-}

@@ -1,7 +1,6 @@
 mod attrs;
 mod data;
 mod extended;
-mod extended_reply;
 mod file_attrs;
 mod handle;
 mod handle_attrs;
@@ -18,15 +17,14 @@ mod symlink;
 mod version;
 mod write;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Bytes, BytesMut, BufMut};
 
-use crate::{buf::TryBuf, error::Error};
+use crate::{buf::TryBuf, de, error::Error, ser};
 
 pub use self::{
     attrs::Attrs,
     data::Data,
-    extended::Extended,
-    extended_reply::ExtendedReply,
+    extended::{Extended, ExtendedReply},
     file_attrs::{FileAttr, FileAttributes, FileType},
     handle::Handle,
     handle_attrs::HandleAttrs,
@@ -91,8 +89,8 @@ macro_rules! impl_request_id {
 }
 
 macro_rules! impl_packet_for {
-    ($name:ident, $packet:ty) => {
-        impl From<$name> for $packet {
+    ($name:ident) => {
+        impl From<$name> for Packet {
             fn from(input: $name) -> Self {
                 Self::$name(input)
             }
@@ -104,8 +102,9 @@ pub(crate) use impl_packet_for;
 pub(crate) use impl_request_id;
 
 #[derive(Debug)]
-pub(crate) enum Request {
+pub(crate) enum Packet {
     Init(Init),
+    Version(Version),
     Open(Open),
     Close(Handle),
     Read(Read),
@@ -124,10 +123,16 @@ pub(crate) enum Request {
     Rename(Rename),
     ReadLink(Path),
     Symlink(Symlink),
+    Status(Status),
+    Handle(Handle),
+    Data(Data),
+    Name(Name),
+    Attrs(Attrs),
     Extended(Extended),
+    ExtendedReply(ExtendedReply),
 }
 
-impl Request {
+impl Packet {
     pub fn get_request_id(&self) -> u32 {
         match self {
             Self::Open(open) => open.get_request_id(),
@@ -152,57 +157,9 @@ impl Request {
             _ => 0,
         }
     }
-}
 
-impl TryFrom<&mut Bytes> for Request {
-    type Error = Error;
-
-    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        let r#type = bytes.try_get_u8()?;
-        debug!("packet type {}", r#type);
-
-        let request = match r#type {
-            SSH_FXP_INIT => Self::Init(Init::try_from(bytes)?),
-            SSH_FXP_OPEN => Self::Open(Open::try_from(bytes)?),
-            SSH_FXP_CLOSE => Self::Close(Handle::try_from(bytes)?),
-            SSH_FXP_READ => Self::Read(Read::try_from(bytes)?),
-            SSH_FXP_WRITE => Self::Write(Write::try_from(bytes)?),
-            SSH_FXP_LSTAT => Self::Lstat(Path::try_from(bytes)?),
-            SSH_FXP_FSTAT => Self::Fstat(Handle::try_from(bytes)?),
-            SSH_FXP_SETSTAT => Self::SetStat(PathAttrs::try_from(bytes)?),
-            SSH_FXP_FSETSTAT => Self::FSetStat(HandleAttrs::try_from(bytes)?),
-            SSH_FXP_OPENDIR => Self::OpenDir(Path::try_from(bytes)?),
-            SSH_FXP_READDIR => Self::ReadDir(Handle::try_from(bytes)?),
-            SSH_FXP_REMOVE => Self::Remove(Remove::try_from(bytes)?),
-            SSH_FXP_MKDIR => Self::Mkdir(PathAttrs::try_from(bytes)?),
-            SSH_FXP_RMDIR => Self::Rmdir(Path::try_from(bytes)?),
-            SSH_FXP_REALPATH => Self::RealPath(Path::try_from(bytes)?),
-            SSH_FXP_STAT => Self::Stat(Path::try_from(bytes)?),
-            SSH_FXP_RENAME => Self::Rename(Rename::try_from(bytes)?),
-            SSH_FXP_READLINK => Self::ReadLink(Path::try_from(bytes)?),
-            SSH_FXP_SYMLINK => Self::Symlink(Symlink::try_from(bytes)?),
-            SSH_FXP_EXTENDED => Self::Extended(Extended::try_from(bytes)?),
-            _ => return Err(Error::BadMessage),
-        };
-
-        Ok(request)
-    }
-}
-
-#[derive(Debug)]
-pub(crate) enum Response {
-    Version(Version),
-    Status(Status),
-    Handle(Handle),
-    Data(Data),
-    Name(Name),
-    Attrs(Attrs),
-    ExtendedReply(ExtendedReply),
-}
-
-impl Response {
     pub fn status(id: u32, status_code: StatusCode, msg: &str, tag: &str) -> Self {
-        Response::Status(Status {
+        Packet::Status(Status {
             id,
             status_code,
             error_message: msg.to_string(),
@@ -215,24 +172,87 @@ impl Response {
     }
 }
 
-impl From<Response> for Bytes {
-    fn from(response: Response) -> Self {
-        let (r#type, payload): (u8, Bytes) = match response {
-            Response::Version(version) => (SSH_FXP_VERSION, version.into()),
-            Response::Status(status) => (SSH_FXP_STATUS, status.into()),
-            Response::Handle(handle) => (SSH_FXP_HANDLE, handle.into()),
-            Response::Data(data) => (SSH_FXP_DATA, data.into()),
-            Response::Name(name) => (SSH_FXP_NAME, name.into()),
-            Response::Attrs(attrs) => (SSH_FXP_ATTRS, attrs.into()),
-            Response::ExtendedReply(reply) => (SSH_FXP_EXTENDED_REPLY, reply.into()),
+impl TryFrom<&mut Bytes> for Packet {
+    type Error = Error;
+
+    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
+        let r#type = bytes.try_get_u8()?;
+        debug!("packet type {}", r#type);
+
+        let request = match r#type {
+            SSH_FXP_INIT => Self::Init(de::from_bytes(bytes)?),
+            SSH_FXP_VERSION => Self::Version(de::from_bytes(bytes)?),
+            SSH_FXP_OPEN => Self::Open(de::from_bytes(bytes)?),
+            SSH_FXP_CLOSE => Self::Close(de::from_bytes(bytes)?),
+            SSH_FXP_READ => Self::Read(de::from_bytes(bytes)?),
+            SSH_FXP_WRITE => Self::Write(de::from_bytes(bytes)?),
+            SSH_FXP_LSTAT => Self::Lstat(de::from_bytes(bytes)?),
+            SSH_FXP_FSTAT => Self::Fstat(de::from_bytes(bytes)?),
+            SSH_FXP_SETSTAT => Self::SetStat(de::from_bytes(bytes)?),
+            SSH_FXP_FSETSTAT => Self::FSetStat(de::from_bytes(bytes)?),
+            SSH_FXP_OPENDIR => Self::OpenDir(de::from_bytes(bytes)?),
+            SSH_FXP_READDIR => Self::ReadDir(de::from_bytes(bytes)?),
+            SSH_FXP_REMOVE => Self::Remove(de::from_bytes(bytes)?),
+            SSH_FXP_MKDIR => Self::Mkdir(de::from_bytes(bytes)?),
+            SSH_FXP_RMDIR => Self::Rmdir(de::from_bytes(bytes)?),
+            SSH_FXP_REALPATH => Self::RealPath(de::from_bytes(bytes)?),
+            SSH_FXP_STAT => Self::Stat(de::from_bytes(bytes)?),
+            SSH_FXP_RENAME => Self::Rename(de::from_bytes(bytes)?),
+            SSH_FXP_READLINK => Self::ReadLink(de::from_bytes(bytes)?),
+            SSH_FXP_SYMLINK => Self::Symlink(de::from_bytes(bytes)?),
+            SSH_FXP_STATUS => Self::Status(de::from_bytes(bytes)?),
+            SSH_FXP_HANDLE => Self::Handle(de::from_bytes(bytes)?),
+            SSH_FXP_DATA => Self::Data(de::from_bytes(bytes)?),
+            SSH_FXP_NAME => Self::Name(de::from_bytes(bytes)?),
+            SSH_FXP_ATTRS => Self::Attrs(de::from_bytes(bytes)?),
+            SSH_FXP_EXTENDED => Self::Extended(de::from_bytes(bytes)?),
+            SSH_FXP_EXTENDED_REPLY => Self::ExtendedReply(de::from_bytes(bytes)?),
+            _ => return Err(Error::BadMessage),
+        };
+
+        Ok(request)
+    }
+}
+
+impl TryFrom<Packet> for Bytes {
+    type Error = Error;
+
+    fn try_from(packet: Packet) -> Result<Self, Self::Error> {
+        let (r#type, payload): (u8, Bytes) = match packet {
+            Packet::Init(init) => (SSH_FXP_INIT, ser::to_bytes(&init)?),
+            Packet::Version(version) => (SSH_FXP_VERSION, ser::to_bytes(&version)?),
+            Packet::Open(open) => (SSH_FXP_OPEN, ser::to_bytes(&open)?),
+            Packet::Close(close) => (SSH_FXP_CLOSE, ser::to_bytes(&close)?),
+            Packet::Read(read) => (SSH_FXP_READ, ser::to_bytes(&read)?),
+            Packet::Write(write) => (SSH_FXP_WRITE, ser::to_bytes(&write)?),
+            Packet::Lstat(stat) => (SSH_FXP_LSTAT, ser::to_bytes(&stat)?),
+            Packet::Fstat(stat) => (SSH_FXP_FSTAT, ser::to_bytes(&stat)?),
+            Packet::SetStat(setstat) => (SSH_FXP_SETSTAT, ser::to_bytes(&setstat)?),
+            Packet::FSetStat(setstat) => (SSH_FXP_FSETSTAT, ser::to_bytes(&setstat)?),
+            Packet::OpenDir(opendir) => (SSH_FXP_OPENDIR, ser::to_bytes(&opendir)?),
+            Packet::ReadDir(readdir) => (SSH_FXP_READDIR, ser::to_bytes(&readdir)?),
+            Packet::Remove(remove) => (SSH_FXP_REMOVE, ser::to_bytes(&remove)?),
+            Packet::Mkdir(mkdir) => (SSH_FXP_MKDIR, ser::to_bytes(&mkdir)?),
+            Packet::Rmdir(rmdir) => (SSH_FXP_RMDIR, ser::to_bytes(&rmdir)?),
+            Packet::RealPath(realpath) => (SSH_FXP_REALPATH, ser::to_bytes(&realpath)?),
+            Packet::Stat(stat) => (SSH_FXP_STAT, ser::to_bytes(&stat)?),
+            Packet::Rename(rename) => (SSH_FXP_RENAME, ser::to_bytes(&rename)?),
+            Packet::ReadLink(readlink) => (SSH_FXP_READLINK, ser::to_bytes(&readlink)?),
+            Packet::Symlink(symlink) => (SSH_FXP_SYMLINK, ser::to_bytes(&symlink)?),
+            Packet::Status(status) => (SSH_FXP_STATUS, ser::to_bytes(&status)?),
+            Packet::Handle(handle) => (SSH_FXP_HANDLE, ser::to_bytes(&handle)?),
+            Packet::Data(data) => (SSH_FXP_DATA, ser::to_bytes(&data)?),
+            Packet::Name(name) => (SSH_FXP_NAME, ser::to_bytes(&name)?),
+            Packet::Attrs(attrs) => (SSH_FXP_ATTRS, ser::to_bytes(&attrs)?),
+            Packet::Extended(extended) => (SSH_FXP_EXTENDED, ser::to_bytes(&extended)?),
+            Packet::ExtendedReply(reply) => (SSH_FXP_EXTENDED_REPLY, ser::to_bytes(&reply)?),
         };
 
         let length = payload.len() as u32 + 1;
-
         let mut bytes = BytesMut::new();
         bytes.put_u32(length);
         bytes.put_u8(r#type);
         bytes.put_slice(&payload);
-        bytes.freeze()
+        Ok(bytes.freeze())
     }
 }

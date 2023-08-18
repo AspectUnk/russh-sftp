@@ -1,23 +1,11 @@
-use bytes::{BufMut, Bytes, BytesMut};
-
-use crate::protocol;
-
-use super::{impl_packet_for, FileAttributes};
+use super::{impl_packet_for, impl_request_id, Packet, RequestId, FileAttributes};
 
 /// Implementation for SSH_FXP_ATTRS
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Attrs {
     pub id: u32,
     pub attrs: FileAttributes,
 }
 
-impl_packet_for!(Attrs, protocol::Response);
-
-impl From<Attrs> for Bytes {
-    fn from(attrs: Attrs) -> Self {
-        let mut bytes = BytesMut::new();
-        bytes.put_u32(attrs.id);
-        bytes.put_slice(&Bytes::from(&attrs.attrs));
-        bytes.freeze()
-    }
-}
+impl_request_id!(Attrs);
+impl_packet_for!(Attrs);

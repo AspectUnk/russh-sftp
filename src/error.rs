@@ -1,4 +1,4 @@
-use std::io;
+use std::{fmt, io};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -20,5 +20,23 @@ impl From<io::Error> for Error {
             io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
             e => Self::IO(e.to_string()),
         }
+    }
+}
+
+impl serde::ser::Error for Error {
+    fn custom<T>(_msg: T) -> Self
+    where
+        T: fmt::Display,
+    {
+        Self::BadMessage
+    }
+}
+
+impl serde::de::Error for Error {
+    fn custom<T>(_msg: T) -> Self
+    where
+        T: fmt::Display,
+    {
+        Self::BadMessage
     }
 }

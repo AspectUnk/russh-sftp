@@ -1,15 +1,9 @@
-use bytes::{BufMut, Bytes, BytesMut};
 use thiserror::Error;
 
-use crate::{
-    buf::{PutBuf, TryBuf},
-    error, protocol,
-};
-
-use super::impl_packet_for;
+use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
 /// Error Codes for SSH_FXP_STATUS
-#[derive(Debug, Error, Clone, Copy, PartialEq, Eq, FromPrimitive)]
+#[derive(Debug, Error, Clone, Copy, Serialize, Deserialize)]
 pub enum StatusCode {
     /// Indicates successful completion of the operation.
     #[error("Ok")]
@@ -46,18 +40,9 @@ pub enum StatusCode {
     OpUnsupported = 8,
 }
 
-impl From<u32> for StatusCode {
-    fn from(value: u32) -> Self {
-        match num::FromPrimitive::from_u32(value) {
-            Some(e) => e,
-            None => Self::Failure,
-        }
-    }
-}
-
 /// Implementation for SSH_FXP_STATUS as defined in the specification draft
 /// https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt on page 19 (part 7)
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Status {
     pub id: u32,
     pub status_code: StatusCode,
@@ -65,30 +50,5 @@ pub struct Status {
     pub language_tag: String,
 }
 
-impl_packet_for!(Status, protocol::Response);
-
-impl From<Status> for Bytes {
-    fn from(status: Status) -> Self {
-        let mut bytes = BytesMut::new();
-
-        bytes.put_u32(status.id);
-        bytes.put_u32(status.status_code as u32);
-        bytes.put_str(&status.error_message);
-        bytes.put_str(&status.language_tag);
-
-        bytes.freeze()
-    }
-}
-
-impl TryFrom<&mut Bytes> for Status {
-    type Error = error::Error;
-
-    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        Ok(Self {
-            id: bytes.try_get_u32()?,
-            status_code: StatusCode::from(bytes.try_get_u32()?),
-            error_message: bytes.try_get_string()?,
-            language_tag: bytes.try_get_string()?,
-        })
-    }
-}
+impl_request_id!(Status);
+impl_packet_for!(Status);
