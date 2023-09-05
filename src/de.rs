@@ -12,17 +12,18 @@ where
     T: serde::Deserialize<'a>,
 {
     let mut deserializer = Deserializer { input: bytes };
-    Ok(T::deserialize(&mut deserializer)?)
+    T::deserialize(&mut deserializer)
 }
 
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = Error;
 
-    fn deserialize_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
+    fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        let len = self.input.len();
+        visitor.visit_seq(SeqDeserializer { de: self, len })
     }
 
     fn deserialize_bool<V>(self, _visitor: V) -> Result<V::Value, Self::Error>

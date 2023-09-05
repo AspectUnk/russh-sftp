@@ -1,16 +1,15 @@
-use bytes::{BufMut, Bytes, BytesMut};
-use serde::{Serialize, ser::SerializeStruct};
+use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::{fs::Metadata, time::UNIX_EPOCH};
+use std::{fmt, fs::Metadata, time::UNIX_EPOCH};
 
-use crate::{buf::TryBuf, error, utils};
+use crate::utils;
 
-    /// Attributes flags according to the specification
+/// Attributes flags according to the specification
 #[derive(Default, Serialize, Deserialize)]
 pub struct FileAttr(u32);
 
-    /// Types according to mode unix
+/// Types according to mode unix
 #[derive(Default, Serialize, Deserialize)]
 pub struct FileType(u32);
 
@@ -20,6 +19,7 @@ bitflags! {
         const UIDGID = 0x00000002;
         const PERMISSIONS = 0x00000004;
         const ACMODTIME = 0x00000008;
+        const EXTENDED = 0x80000000;
     }
 
     impl FileType: u32 {
@@ -43,7 +43,7 @@ bitflags! {
 ///
 /// The `flags` field is omitted because it
 /// is set by itself depending on the flags
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct FileAttributes {
     pub size: Option<u64>,
     pub uid: Option<u32>,
@@ -148,25 +148,30 @@ impl Serialize for FileAttributes {
     where
         S: serde::Serializer,
     {
-        let mut s = serializer.serialize_struct("FileAttributes", 7)?;
         let mut attrs = FileAttr::default();
+        let mut field_count = 1;
 
         if self.size.is_some() {
             attrs |= FileAttr::SIZE;
+            field_count += 1;
         }
 
         if self.uid.is_some() || self.gid.is_some() {
             attrs |= FileAttr::UIDGID;
+            field_count += 2;
         }
 
         if self.permissions.is_some() {
             attrs |= FileAttr::PERMISSIONS;
+            field_count += 1;
         }
 
         if self.atime.is_some() || self.mtime.is_some() {
             attrs |= FileAttr::ACMODTIME;
+            field_count += 2;
         }
 
+        let mut s = serializer.serialize_struct("FileAttributes", field_count)?;
         s.serialize_field("attrs", &attrs)?;
 
         if let Some(size) = self.size {
@@ -187,95 +192,69 @@ impl Serialize for FileAttributes {
             s.serialize_field("mtime", &self.mtime.unwrap_or(0))?;
         }
 
+        // todo: extended implementation
+
         s.end()
     }
 }
 
-impl From<&FileAttributes> for Bytes {
-    fn from(file_attrs: &FileAttributes) -> Self {
-        let mut attrs = FileAttr::default();
+impl<'de> Deserialize<'de> for FileAttributes {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct FileAttributesVisitor;
 
-        if file_attrs.size.is_some() {
-            attrs |= FileAttr::SIZE;
+        impl<'de> Visitor<'de> for FileAttributesVisitor {
+            type Value = FileAttributes;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("file attributes")
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let attrs = FileAttr::from_bits_truncate(seq.next_element::<u32>()?.unwrap_or(0));
+
+                Ok(FileAttributes {
+                    size: if attrs.contains(FileAttr::SIZE) {
+                        seq.next_element::<u64>()?
+                    } else {
+                        None
+                    },
+                    uid: if attrs.contains(FileAttr::UIDGID) {
+                        seq.next_element::<u32>()?
+                    } else {
+                        None
+                    },
+                    user: None,
+                    gid: if attrs.contains(FileAttr::UIDGID) {
+                        seq.next_element::<u32>()?
+                    } else {
+                        None
+                    },
+                    group: None,
+                    permissions: if attrs.contains(FileAttr::PERMISSIONS) {
+                        seq.next_element::<u32>()?
+                    } else {
+                        None
+                    },
+                    atime: if attrs.contains(FileAttr::ACMODTIME) {
+                        seq.next_element::<u32>()?
+                    } else {
+                        None
+                    },
+                    mtime: if attrs.contains(FileAttr::ACMODTIME) {
+                        seq.next_element::<u32>()?
+                    } else {
+                        None
+                    },
+                })
+            }
         }
 
-        if file_attrs.uid.is_some() || file_attrs.gid.is_some() {
-            attrs |= FileAttr::UIDGID;
-        }
-
-        if file_attrs.permissions.is_some() {
-            attrs |= FileAttr::PERMISSIONS;
-        }
-
-        if file_attrs.atime.is_some() || file_attrs.mtime.is_some() {
-            attrs |= FileAttr::ACMODTIME;
-        }
-
-        let mut bytes = BytesMut::new();
-
-        bytes.put_u32(attrs.bits());
-
-        if let Some(size) = file_attrs.size {
-            bytes.put_u64(size);
-        }
-
-        if file_attrs.uid.is_some() || file_attrs.gid.is_some() {
-            bytes.put_u32(file_attrs.uid.unwrap_or(0));
-            bytes.put_u32(file_attrs.gid.unwrap_or(0));
-        }
-
-        if let Some(permissions) = file_attrs.permissions {
-            bytes.put_u32(permissions);
-        }
-
-        if file_attrs.atime.is_some() || file_attrs.mtime.is_some() {
-            bytes.put_u32(file_attrs.atime.unwrap_or(0));
-            bytes.put_u32(file_attrs.mtime.unwrap_or(0));
-        }
-
-        bytes.freeze()
-    }
-}
-
-impl TryFrom<&mut Bytes> for FileAttributes {
-    type Error = error::Error;
-
-    fn try_from(bytes: &mut Bytes) -> Result<Self, Self::Error> {
-        let attrs = FileAttr::from_bits_truncate(bytes.try_get_u32()?);
-
-        Ok(Self {
-            size: if attrs.contains(FileAttr::SIZE) {
-                Some(bytes.try_get_u64()?)
-            } else {
-                None
-            },
-            uid: if attrs.contains(FileAttr::UIDGID) {
-                Some(bytes.try_get_u32()?)
-            } else {
-                None
-            },
-            user: None,
-            gid: if attrs.contains(FileAttr::UIDGID) {
-                Some(bytes.try_get_u32()?)
-            } else {
-                None
-            },
-            group: None,
-            permissions: if attrs.contains(FileAttr::PERMISSIONS) {
-                Some(bytes.try_get_u32()?)
-            } else {
-                None
-            },
-            atime: if attrs.contains(FileAttr::ACMODTIME) {
-                Some(bytes.try_get_u32()?)
-            } else {
-                None
-            },
-            mtime: if attrs.contains(FileAttr::ACMODTIME) {
-                Some(bytes.try_get_u32()?)
-            } else {
-                None
-            },
-        })
+        deserializer.deserialize_any(FileAttributesVisitor)
     }
 }

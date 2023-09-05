@@ -1,4 +1,4 @@
-use super::{impl_request_id, RequestId, FileAttributes};
+use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
 
 /// Opening flags according to the specification
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -25,3 +25,4 @@ pub struct Open {
 }
 
 impl_request_id!(Open);
+impl_packet_for!(Open);

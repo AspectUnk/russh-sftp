@@ -1,41 +1,61 @@
 mod attrs;
+mod close;
 mod data;
 mod extended;
+mod file;
 mod file_attrs;
+mod fsetstat;
+mod fstat;
 mod handle;
-mod handle_attrs;
 mod init;
+mod lstat;
+mod mkdir;
 mod name;
 mod open;
-mod path;
-mod path_attrs;
+mod opendir;
 mod read;
+mod readdir;
+mod readlink;
+mod realpath;
 mod remove;
 mod rename;
+mod rmdir;
+mod setstat;
+mod stat;
 mod status;
 mod symlink;
 mod version;
 mod write;
 
-use bytes::{Bytes, BytesMut, BufMut};
+use bytes::{BufMut, Bytes, BytesMut};
 
 use crate::{buf::TryBuf, de, error::Error, ser};
 
 pub use self::{
     attrs::Attrs,
+    close::Close,
     data::Data,
     extended::{Extended, ExtendedReply},
+    file::File,
     file_attrs::{FileAttr, FileAttributes, FileType},
+    fsetstat::FSetStat,
+    fstat::Fstat,
     handle::Handle,
-    handle_attrs::HandleAttrs,
     init::Init,
-    name::{File, Name},
+    lstat::Lstat,
+    mkdir::MkDir,
+    name::Name,
     open::{Open, OpenFlags},
-    path::Path,
-    path_attrs::PathAttrs,
+    opendir::OpenDir,
     read::Read,
+    readdir::ReadDir,
+    readlink::ReadLink,
+    realpath::RealPath,
     remove::Remove,
     rename::Rename,
+    rmdir::RmDir,
+    setstat::SetStat,
+    stat::Stat,
     status::{Status, StatusCode},
     symlink::Symlink,
     version::Version,
@@ -102,26 +122,26 @@ pub(crate) use impl_packet_for;
 pub(crate) use impl_request_id;
 
 #[derive(Debug)]
-pub(crate) enum Packet {
+pub enum Packet {
     Init(Init),
     Version(Version),
     Open(Open),
-    Close(Handle),
+    Close(Close),
     Read(Read),
     Write(Write),
-    Lstat(Path),
-    Fstat(Handle),
-    SetStat(PathAttrs),
-    FSetStat(HandleAttrs),
-    OpenDir(Path),
-    ReadDir(Handle),
+    Lstat(Lstat),
+    Fstat(Fstat),
+    SetStat(SetStat),
+    FSetStat(FSetStat),
+    OpenDir(OpenDir),
+    ReadDir(ReadDir),
     Remove(Remove),
-    Mkdir(PathAttrs),
-    Rmdir(Path),
-    RealPath(Path),
-    Stat(Path),
+    MkDir(MkDir),
+    RmDir(RmDir),
+    RealPath(RealPath),
+    Stat(Stat),
     Rename(Rename),
-    ReadLink(Path),
+    ReadLink(ReadLink),
     Symlink(Symlink),
     Status(Status),
     Handle(Handle),
@@ -146,8 +166,8 @@ impl Packet {
             Self::OpenDir(opendir) => opendir.get_request_id(),
             Self::ReadDir(readdir) => readdir.get_request_id(),
             Self::Remove(remove) => remove.get_request_id(),
-            Self::Mkdir(mkdir) => mkdir.get_request_id(),
-            Self::Rmdir(rmdir) => rmdir.get_request_id(),
+            Self::MkDir(mkdir) => mkdir.get_request_id(),
+            Self::RmDir(rmdir) => rmdir.get_request_id(),
             Self::RealPath(realpath) => realpath.get_request_id(),
             Self::Stat(stat) => stat.get_request_id(),
             Self::Rename(rename) => rename.get_request_id(),
@@ -193,8 +213,8 @@ impl TryFrom<&mut Bytes> for Packet {
             SSH_FXP_OPENDIR => Self::OpenDir(de::from_bytes(bytes)?),
             SSH_FXP_READDIR => Self::ReadDir(de::from_bytes(bytes)?),
             SSH_FXP_REMOVE => Self::Remove(de::from_bytes(bytes)?),
-            SSH_FXP_MKDIR => Self::Mkdir(de::from_bytes(bytes)?),
-            SSH_FXP_RMDIR => Self::Rmdir(de::from_bytes(bytes)?),
+            SSH_FXP_MKDIR => Self::MkDir(de::from_bytes(bytes)?),
+            SSH_FXP_RMDIR => Self::RmDir(de::from_bytes(bytes)?),
             SSH_FXP_REALPATH => Self::RealPath(de::from_bytes(bytes)?),
             SSH_FXP_STAT => Self::Stat(de::from_bytes(bytes)?),
             SSH_FXP_RENAME => Self::Rename(de::from_bytes(bytes)?),
@@ -232,8 +252,8 @@ impl TryFrom<Packet> for Bytes {
             Packet::OpenDir(opendir) => (SSH_FXP_OPENDIR, ser::to_bytes(&opendir)?),
             Packet::ReadDir(readdir) => (SSH_FXP_READDIR, ser::to_bytes(&readdir)?),
             Packet::Remove(remove) => (SSH_FXP_REMOVE, ser::to_bytes(&remove)?),
-            Packet::Mkdir(mkdir) => (SSH_FXP_MKDIR, ser::to_bytes(&mkdir)?),
-            Packet::Rmdir(rmdir) => (SSH_FXP_RMDIR, ser::to_bytes(&rmdir)?),
+            Packet::MkDir(mkdir) => (SSH_FXP_MKDIR, ser::to_bytes(&mkdir)?),
+            Packet::RmDir(rmdir) => (SSH_FXP_RMDIR, ser::to_bytes(&rmdir)?),
             Packet::RealPath(realpath) => (SSH_FXP_REALPATH, ser::to_bytes(&realpath)?),
             Packet::Stat(stat) => (SSH_FXP_STAT, ser::to_bytes(&stat)?),
             Packet::Rename(rename) => (SSH_FXP_RENAME, ser::to_bytes(&rename)?),

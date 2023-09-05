@@ -50,15 +50,15 @@ where
         Packet::OpenDir(opendir) => into_wrap!(id, handler, opendir; id, path),
         Packet::ReadDir(readdir) => into_wrap!(id, handler, readdir; id, handle),
         Packet::Remove(remove) => into_wrap!(id, handler, remove; id, filename),
-        Packet::Mkdir(mkdir) => into_wrap!(id, handler, mkdir; id, path, attrs),
-        Packet::Rmdir(rmdir) => into_wrap!(id, handler, rmdir; id, path),
+        Packet::MkDir(mkdir) => into_wrap!(id, handler, mkdir; id, path, attrs),
+        Packet::RmDir(rmdir) => into_wrap!(id, handler, rmdir; id, path),
         Packet::RealPath(realpath) => into_wrap!(id, handler, realpath; id, path),
         Packet::Stat(stat) => into_wrap!(id, handler, stat; id, path),
         Packet::Rename(rename) => into_wrap!(id, handler, rename; id, oldpath, newpath),
         Packet::ReadLink(readlink) => into_wrap!(id, handler, readlink; id, path),
         Packet::Symlink(symlink) => into_wrap!(id, handler, symlink; id, linkpath, targetpath),
         Packet::Extended(extended) => into_wrap!(id, handler, extended; id, request, data),
-        _ => Packet::error(0, StatusCode::BadMessage)
+        _ => Packet::error(0, StatusCode::BadMessage),
     }
 }
 

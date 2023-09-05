@@ -151,10 +151,12 @@ impl russh_sftp::server::Handler for SftpSession {
                 files: vec![
                     File {
                         filename: "foo".to_string(),
+                        longname: "".to_string(),
                         attrs: FileAttributes::default(),
                     },
                     File {
                         filename: "bar".to_string(),
+                        longname: "".to_string(),
                         attrs: FileAttributes::default(),
                     },
                 ],
@@ -169,6 +171,7 @@ impl russh_sftp::server::Handler for SftpSession {
             id,
             files: vec![File {
                 filename: "/".to_string(),
+                longname: "".to_string(),
                 attrs: FileAttributes::default(),
             }],
         })

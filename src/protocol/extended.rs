@@ -9,6 +9,7 @@ pub struct Extended {
 }
 
 impl_request_id!(Extended);
+impl_packet_for!(Extended);
 
 /// Implementation for SSH_FXP_EXTENDED_REPLY
 #[derive(Debug, Serialize, Deserialize)]

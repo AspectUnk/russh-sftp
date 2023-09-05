@@ -1,6 +1,6 @@
-use super::{impl_request_id, RequestId, Packet, impl_packet_for};
+use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_... CLOSE, FSTAT and READDIR
+/// Implementation for SSH_FXP_HANDLE
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Handle {
     pub id: u32,
