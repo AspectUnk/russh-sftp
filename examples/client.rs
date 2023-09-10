@@ -1,9 +1,8 @@
 use async_trait::async_trait;
-use bytes::Bytes;
 use russh::*;
 use russh_keys::*;
+use russh_sftp::client::SftpSession;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 struct Client;
 
@@ -25,16 +24,26 @@ impl client::Handler for Client {
         data: &[u8],
         session: client::Session,
     ) -> Result<(Self, client::Session), Self::Error> {
-        println!(
-            "data on channel {:?}: {:?}",
-            channel,
-            std::str::from_utf8(data)
-        );
+        println!("data on channel {:?}: {}", channel, data.len());
         Ok((self, session))
     }
 }
 
 #[tokio::main]
 async fn main() {
-    
+    let config = russh::client::Config::default();
+    let sh = Client {};
+    let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
+        .await
+        .unwrap();
+    if session
+        .authenticate_password("root", "pass")
+        .await
+        .unwrap()
+    {
+        let mut channel = session.channel_open_session().await.unwrap();
+        channel.request_subsystem(true, "sftp").await.unwrap();
+        let _session = SftpSession::new(channel.into_stream()).await.unwrap();
+        //println!("{:?}", session);
+    }
 }

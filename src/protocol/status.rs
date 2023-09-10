@@ -41,7 +41,7 @@ pub enum StatusCode {
 }
 
 /// Implementation for SSH_FXP_STATUS as defined in the specification draft
-/// https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt on page 19 (part 7)
+/// https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-7
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Status {
     pub id: u32,

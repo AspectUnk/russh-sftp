@@ -1,6 +1,6 @@
 # Russh SFTP
 SFTP subsystem supported server and client for [Russh](https://github.com/warp-tech/russh)\
-Implemented according to [version 3 specifications](https://filezilla-project.org/specs/draft-ietf-secsh-filexfer-02.txt) (most popular)
+Implemented according to [version 3 specifications](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02) (most popular)
 
 ## Examples
 - [Simple server](https://github.com/AspectUnk/russh-sftp/blob/master/examples/server.rs)
@@ -13,7 +13,6 @@ Implemented according to [version 3 specifications](https://filezilla-project.or
 - [x] Simplification for file attributes
 - [x] Server side
 - [x] Simple server example
-- [ ] Error handler (unlike specification)
 - [ ] Full server example
 - [ ] Unit tests
 - [ ] Workflow

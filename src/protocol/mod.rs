@@ -110,6 +110,12 @@ macro_rules! impl_request_id {
 
 macro_rules! impl_packet_for {
     ($name:ident) => {
+        impl $name {
+            pub fn into_packet(self) -> Packet {
+                Packet::$name(self)
+            }
+        }
+
         impl From<$name> for Packet {
             fn from(input: $name) -> Self {
                 Self::$name(input)
@@ -227,7 +233,7 @@ impl TryFrom<&mut Bytes> for Packet {
             SSH_FXP_ATTRS => Self::Attrs(de::from_bytes(bytes)?),
             SSH_FXP_EXTENDED => Self::Extended(de::from_bytes(bytes)?),
             SSH_FXP_EXTENDED_REPLY => Self::ExtendedReply(de::from_bytes(bytes)?),
-            _ => return Err(Error::BadMessage),
+            _ => return Err(Error::BadMessage("unknown type".to_owned())),
         };
 
         Ok(request)

@@ -7,8 +7,10 @@ pub enum Error {
     IO(String),
     #[error("Unexpected EOF on stream")]
     UnexpectedEof,
-    #[error("Bad message")]
-    BadMessage,
+    #[error("Bad message: {0}")]
+    BadMessage(String),
+    #[error("Unexpected behavior: {0}")]
+    UnexpectedBehavior(String),
 }
 
 impl From<io::Error> for Error {
@@ -23,20 +25,38 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<tokio::sync::oneshot::error::RecvError> for Error {
+    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
+        Self::UnexpectedBehavior(err.to_string())
+    }
+}
+
+impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
+    fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
+        Self::UnexpectedBehavior(err.to_string())
+    }
+}
+
+impl From<tokio::time::error::Elapsed> for Error {
+    fn from(err: tokio::time::error::Elapsed) -> Self {
+        Self::UnexpectedBehavior(err.to_string())
+    }
+}
+
 impl serde::ser::Error for Error {
-    fn custom<T>(_msg: T) -> Self
+    fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
     {
-        Self::BadMessage
+        Self::BadMessage(msg.to_string())
     }
 }
 
 impl serde::de::Error for Error {
-    fn custom<T>(_msg: T) -> Self
+    fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
     {
-        Self::BadMessage
+        Self::BadMessage(msg.to_string())
     }
 }
