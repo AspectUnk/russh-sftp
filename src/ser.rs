@@ -193,6 +193,10 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
         Err(Error::BadMessage("struct variant not supported".to_owned()))
     }
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 }
 
 impl<'a> SerializeSeq for &'a mut Serializer {

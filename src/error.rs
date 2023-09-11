@@ -1,7 +1,7 @@
 use std::{fmt, io};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error)]
 pub enum Error {
     #[error("I/O: {0}")]
     IO(String),
@@ -22,24 +22,6 @@ impl From<io::Error> for Error {
             io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
             e => Self::IO(e.to_string()),
         }
-    }
-}
-
-impl From<tokio::sync::oneshot::error::RecvError> for Error {
-    fn from(err: tokio::sync::oneshot::error::RecvError) -> Self {
-        Self::UnexpectedBehavior(err.to_string())
-    }
-}
-
-impl<T> From<tokio::sync::mpsc::error::SendError<T>> for Error {
-    fn from(err: tokio::sync::mpsc::error::SendError<T>) -> Self {
-        Self::UnexpectedBehavior(err.to_string())
-    }
-}
-
-impl From<tokio::time::error::Elapsed> for Error {
-    fn from(err: tokio::time::error::Elapsed) -> Self {
-        Self::UnexpectedBehavior(err.to_string())
     }
 }
 

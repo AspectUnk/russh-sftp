@@ -3,7 +3,7 @@ use thiserror::Error;
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
 /// Error Codes for SSH_FXP_STATUS
-#[derive(Debug, Error, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum StatusCode {
     /// Indicates successful completion of the operation.
     #[error("Ok")]
@@ -42,7 +42,7 @@ pub enum StatusCode {
 
 /// Implementation for SSH_FXP_STATUS as defined in the specification draft
 /// https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-7
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Status {
     pub id: u32,
     pub status_code: StatusCode,

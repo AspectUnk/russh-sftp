@@ -1,3 +1,4 @@
+mod error;
 mod handler;
 mod rawsession;
 mod session;
@@ -20,22 +21,24 @@ where
     H: Handler + Send,
 {
     let mut bytes = read_packet(stream).await?;
-    println!("{:?}", bytes);
 
-    let packet = Packet::try_from(&mut bytes)?;
-    match packet {
-        Packet::Version(p) => match handler.version(p).await {
-            _ => (),
-        },
-        Packet::ExtendedReply(p) => match handler.extended_reply(p).await {
-            _ => (),
-        },
-        _ => (),
-    }
+    // todo: error logging
+    let _ = match Packet::try_from(&mut bytes)? {
+        Packet::Version(p) => handler.version(p).await,
+        Packet::Status(p) => handler.status(p).await,
+        Packet::Handle(p) => handler.handle(p).await,
+        Packet::Data(p) => handler.data(p).await,
+        Packet::Name(p) => handler.name(p).await,
+        Packet::Attrs(p) => handler.attrs(p).await,
+        Packet::ExtendedReply(p) => handler.extended_reply(p).await,
+        _ => Ok(()),
+    };
 
     Ok(())
 }
 
+/// Run processing stream as SFTP client. Is a simple handler of incoming
+/// and outgoing packets. Can be used for non-standard implementations
 pub fn run<S, H>(mut stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,

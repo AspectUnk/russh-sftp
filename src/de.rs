@@ -178,11 +178,8 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = self.input.try_get_u32()?;
-        visitor.visit_seq(SeqDeserializer {
-            de: self,
-            len: len as usize,
-        })
+        let len = self.input.try_get_u32()? as usize;
+        visitor.visit_seq(SeqDeserializer { de: self, len })
     }
 
     fn deserialize_tuple<V>(self, len: usize, visitor: V) -> Result<V::Value, Self::Error>
@@ -201,7 +198,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer { de: self, len })
+        self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -220,10 +217,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer {
-            de: self,
-            len: fields.len(),
-        })
+        self.deserialize_tuple(fields.len(), visitor)
     }
 
     fn deserialize_enum<V>(
@@ -250,6 +244,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: serde::de::Visitor<'de>,
     {
         Err(Error::BadMessage("ignored any not supported".to_owned()))
+    }
+
+    fn is_human_readable(&self) -> bool {
+        false
     }
 }
 

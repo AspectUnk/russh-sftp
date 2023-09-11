@@ -110,12 +110,6 @@ macro_rules! impl_request_id {
 
 macro_rules! impl_packet_for {
     ($name:ident) => {
-        impl $name {
-            pub fn into_packet(self) -> Packet {
-                Packet::$name(self)
-            }
-        }
-
         impl From<$name> for Packet {
             fn from(input: $name) -> Self {
                 Self::$name(input)
