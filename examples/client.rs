@@ -54,6 +54,11 @@ async fn main() {
             sftp.symlink_metadata(path).await.unwrap()
         );
 
+        println!(
+            "files in current dir: {:?}",
+            sftp.read_dir(".").await.unwrap()
+        );
+
         sftp.remove_file(symlink).await.unwrap();
         sftp.remove_dir(path).await.unwrap();
     }

@@ -1,7 +1,7 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 
 use super::{error::Error, rawsession::RawSftpSession};
-use crate::protocol::FileAttributes;
+use crate::protocol::{FileAttributes, StatusCode};
 
 /// High-level SFTP implementation for easy interaction with a remote file system
 pub struct SftpSession {
@@ -43,9 +43,23 @@ impl SftpSession {
             .map(|_| ())
     }
 
-    pub async fn read_dir<T: Into<String>>(&mut self, path: T) -> Result<(), Error> {
-        println!("opendir: {:?}", self.raw.opendir(path).await);
-        Ok(())
+    pub async fn read_dir<T: Into<String>>(&mut self, path: T) -> Result<Vec<String>, Error> {
+        let mut files = vec![];
+        let handle = self.raw.opendir(path).await?.handle;
+
+        loop {
+            match self.raw.readdir(handle.as_str()).await {
+                Ok(name) => {
+                    files.append(&mut name.files.into_iter().map(|f| f.filename).collect());
+                }
+                Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
+                Err(err) => return Err(err),
+            }
+        }
+
+        self.raw.close(handle).await.unwrap();
+
+        Ok(files)
     }
 
     pub async fn read_link<T: Into<String>>(&mut self, path: T) -> Result<String, Error> {

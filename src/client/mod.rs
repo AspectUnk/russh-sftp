@@ -1,4 +1,5 @@
 mod error;
+mod fs;
 mod handler;
 mod rawsession;
 mod session;
