@@ -1,7 +1,12 @@
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::{fmt, fs::Metadata, time::UNIX_EPOCH};
+use std::{
+    fmt,
+    fs::Metadata,
+    io::ErrorKind,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use crate::utils;
 
@@ -35,15 +40,14 @@ bitflags! {
     // TODO: Add FilePermission
 }
 
-/// Used in the implementation of other packages.
+/// Used in the implementation of other packets.
+/// Implements most [Metadata](std::fs::Metadata) methods
 ///
-/// The fields `user` and `group` are string names of users
-/// and groups for clients that can be displayed from longname.
-/// Can be omitted.
+/// The fields `user` and `group` are string names of users and groups for
+/// clients that can be displayed in longname. Can be omitted.
 ///
-/// The `flags` field is omitted because it
-/// is set by itself depending on the flags
-#[derive(Debug)]
+/// The `flags` field is omitted because it is set by itself depending on the flags
+#[derive(Debug, Clone)]
 pub struct FileAttributes {
     pub size: Option<u64>,
     pub uid: Option<u32>,
@@ -95,6 +99,27 @@ impl FileAttributes {
     pub fn remove_type(&mut self, r#type: FileType) {
         let perms = self.permissions.unwrap_or(0);
         self.permissions = Some(perms & !r#type.bits());
+    }
+
+    /// Returns the size of the file
+    pub fn len(&self) -> u64 {
+        self.size.unwrap_or(0)
+    }
+
+    /// Returns the last access time
+    pub fn accessed(&self) -> std::io::Result<SystemTime> {
+        match self.atime {
+            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+            None => Err(ErrorKind::InvalidData.into()),
+        }
+    }
+
+    /// Returns the last modification time
+    pub fn modified(&self) -> std::io::Result<SystemTime> {
+        match self.mtime {
+            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+            None => Err(ErrorKind::InvalidData.into()),
+        }
     }
 }
 

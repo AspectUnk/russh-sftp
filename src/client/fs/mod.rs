@@ -1,3 +1,6 @@
 mod dir;
 mod file;
-mod metadata;
+
+use crate::protocol::FileAttributes;
+
+pub type Metadata = FileAttributes;
