@@ -1,9 +1,14 @@
 use tokio::io::{AsyncRead, AsyncWrite};
 
-use super::{error::Error, fs::Metadata, rawsession::RawSftpSession};
+use super::{
+    error::Error,
+    fs::{Metadata, ReadDir},
+    rawsession::RawSftpSession,
+};
 use crate::protocol::{FileAttributes, StatusCode};
 
-/// High-level SFTP implementation for easy interaction with a remote file system
+/// High-level SFTP implementation for easy interaction with a remote file system.
+/// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
     raw: RawSftpSession,
 }
@@ -43,10 +48,7 @@ impl SftpSession {
             .map(|_| ())
     }
 
-    pub async fn read_dir<T: Into<String>>(
-        &mut self,
-        path: T,
-    ) -> Result<Vec<(String, Metadata)>, Error> {
+    pub async fn read_dir<T: Into<String>>(&mut self, path: T) -> Result<ReadDir, Error> {
         let mut files = vec![];
 
         let handle = self.raw.opendir(path).await?.handle;
@@ -57,7 +59,7 @@ impl SftpSession {
                     files = name
                         .files
                         .into_iter()
-                        .map(|f| (f.filename.into(), f.attrs))
+                        .map(|f| (f.filename, f.attrs))
                         .chain(files.into_iter())
                         .collect();
                 }
@@ -67,7 +69,7 @@ impl SftpSession {
         }
 
         self.raw.close(handle).await?;
-        Ok(files)
+        Ok(ReadDir::new(files.into()))
     }
 
     pub async fn read_link<T: Into<String>>(&mut self, path: T) -> Result<String, Error> {
