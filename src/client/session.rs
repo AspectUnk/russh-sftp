@@ -7,14 +7,15 @@ use tokio::{
 use super::{
     error::Error,
     fs::{File, Metadata, ReadDir},
-    rawsession::{RawSftpSession, SftpResult},
+    rawsession::SftpResult,
+    RawSftpSession,
 };
 use crate::protocol::{FileAttributes, OpenFlags, StatusCode};
 
 /// High-level SFTP implementation for easy interaction with a remote file system.
 /// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
-    raw: Arc<Mutex<RawSftpSession>>,
+    session: Arc<Mutex<RawSftpSession>>,
 }
 
 impl SftpSession {
@@ -22,40 +23,40 @@ impl SftpSession {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let raw = RawSftpSession::new(stream);
-        let version = raw.init().await?;
+        let session = RawSftpSession::new(stream);
+        let version = session.init().await?;
 
         // todo: implement limit request
         if version.extensions["limits@openssh.com"] == "1" {
             println!("has limits");
-            // let reply = raw
+            // let reply = session
             //     .extended("limits@openssh.com".to_owned(), vec![])
             //     .await?;
             // println!("{:?}", reply);
         }
 
         Ok(Self {
-            raw: Arc::new(Mutex::new(raw)),
+            session: Arc::new(Mutex::new(session)),
         })
     }
 
     pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
         let handle = self
-            .raw
+            .session
             .lock()
             .await
             .open(filename, OpenFlags::READ, FileAttributes::default())
             .await?
             .handle;
-        
+
         Ok(File {
-            raw: self.raw.clone(),
+            session: self.session.clone(),
             handle,
         })
     }
 
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
-        let name = self.raw.lock().await.realpath(path).await?;
+        let name = self.session.lock().await.realpath(path).await?;
         match name.files.get(0) {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
@@ -63,7 +64,7 @@ impl SftpSession {
     }
 
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
-        self.raw
+        self.session
             .lock()
             .await
             .mkdir(path, FileAttributes::default())
@@ -73,10 +74,10 @@ impl SftpSession {
 
     pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {
         let mut files = vec![];
-        let handle = self.raw.lock().await.opendir(path).await?.handle;
+        let handle = self.session.lock().await.opendir(path).await?.handle;
 
         loop {
-            match self.raw.lock().await.readdir(handle.as_str()).await {
+            match self.session.lock().await.readdir(handle.as_str()).await {
                 Ok(name) => {
                     files = name
                         .files
@@ -90,7 +91,7 @@ impl SftpSession {
             }
         }
 
-        self.raw.lock().await.close(handle).await?;
+        self.session.lock().await.close(handle).await?;
 
         Ok(ReadDir {
             entries: files.into(),
@@ -98,7 +99,7 @@ impl SftpSession {
     }
 
     pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
-        let name = self.raw.lock().await.readlink(path).await?;
+        let name = self.session.lock().await.readlink(path).await?;
         match name.files.get(0) {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
@@ -106,11 +107,11 @@ impl SftpSession {
     }
 
     pub async fn remove_dir<P: Into<String>>(&self, path: P) -> SftpResult<()> {
-        self.raw.lock().await.rmdir(path).await.map(|_| ())
+        self.session.lock().await.rmdir(path).await.map(|_| ())
     }
 
     pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
-        self.raw.lock().await.remove(filename).await.map(|_| ())
+        self.session.lock().await.remove(filename).await.map(|_| ())
     }
 
     pub async fn rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
@@ -118,7 +119,7 @@ impl SftpSession {
         O: Into<String>,
         N: Into<String>,
     {
-        self.raw
+        self.session
             .lock()
             .await
             .rename(oldpath, newpath)
@@ -131,7 +132,7 @@ impl SftpSession {
         P: Into<String>,
         T: Into<String>,
     {
-        self.raw
+        self.session
             .lock()
             .await
             .symlink(path, target)
@@ -140,7 +141,7 @@ impl SftpSession {
     }
 
     pub async fn metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.raw.lock().await.stat(path).await?.attrs)
+        Ok(self.session.lock().await.stat(path).await?.attrs)
     }
 
     pub async fn set_metadata<P: Into<String>>(
@@ -148,7 +149,7 @@ impl SftpSession {
         path: P,
         metadata: Metadata,
     ) -> Result<(), Error> {
-        self.raw
+        self.session
             .lock()
             .await
             .setstat(path, metadata)
@@ -157,6 +158,6 @@ impl SftpSession {
     }
 
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.raw.lock().await.lstat(path).await?.attrs)
+        Ok(self.session.lock().await.lstat(path).await?.attrs)
     }
 }
