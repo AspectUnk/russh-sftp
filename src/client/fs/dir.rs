@@ -19,13 +19,7 @@ impl DirEntry {
 }
 
 pub struct ReadDir {
-    entries: VecDeque<(String, Metadata)>,
-}
-
-impl ReadDir {
-    pub(crate) fn new(entries: VecDeque<(String, Metadata)>) -> Self {
-        Self { entries }
-    }
+    pub(crate) entries: VecDeque<(String, Metadata)>,
 }
 
 impl Iterator for ReadDir {

@@ -1,21 +1,20 @@
-use std::{sync::Arc, time::Duration};
-
 use bytes::Bytes;
+use std::{sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot, Mutex},
     time::timeout,
 };
 
+use super::{error::Error, run, Handler};
 use crate::protocol::{
     Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
     Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
     Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
 };
 
-use super::{error::Error, run, Handler};
-
-pub(crate) type SharedData = Mutex<Vec<(Option<u32>, oneshot::Sender<Result<Packet, Error>>)>>;
+pub type SftpResult<T> = Result<T, Error>;
+type SharedData = Mutex<Vec<(Option<u32>, oneshot::Sender<SftpResult<Packet>>)>>;
 
 pub(crate) struct SessionInner {
     version: Option<u32>,
@@ -134,7 +133,7 @@ impl RawSftpSession {
         }
     }
 
-    async fn send(&self, id: Option<u32>, packet: Packet) -> Result<Packet, Error> {
+    async fn send(&self, id: Option<u32>, packet: Packet) -> SftpResult<Packet> {
         let (tx, rx) = oneshot::channel();
 
         self.requests.lock().await.push((id, tx));
@@ -150,7 +149,7 @@ impl RawSftpSession {
         id
     }
 
-    pub async fn init(&self) -> Result<Version, Error> {
+    pub async fn init(&self) -> SftpResult<Version> {
         let result = self.send(None, Init::default().into()).await?;
         if let Packet::Version(version) = result {
             Ok(version)
@@ -164,7 +163,7 @@ impl RawSftpSession {
         filename: T,
         flags: OpenFlags,
         attrs: FileAttributes,
-    ) -> Result<Handle, Error> {
+    ) -> SftpResult<Handle> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -182,7 +181,7 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn close<T: Into<String>>(&mut self, handle: T) -> Result<Status, Error> {
+    pub async fn close<H: Into<String>>(&mut self, handle: H) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -198,12 +197,12 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn read<T: Into<String>>(
+    pub async fn read<H: Into<String>>(
         &mut self,
-        handle: T,
+        handle: H,
         offset: u64,
         len: u32,
-    ) -> Result<Data, Error> {
+    ) -> SftpResult<Data> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -221,9 +220,9 @@ impl RawSftpSession {
         into_with_status!(result, Data)
     }
 
-    pub async fn write<T: Into<String>>(
+    pub async fn write<H: Into<String>>(
         &mut self,
-        handle: T,
+        handle: H,
         offset: u64,
         data: Vec<u8>,
     ) -> Result<Status, Error> {
@@ -244,7 +243,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn lstat<T: Into<String>>(&mut self, path: T) -> Result<Attrs, Error> {
+    pub async fn lstat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -260,7 +259,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn fstat<T: Into<String>>(&mut self, handle: T) -> Result<Attrs, Error> {
+    pub async fn fstat<H: Into<String>>(&mut self, handle: H) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -276,11 +275,11 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn setstat<T: Into<String>>(
+    pub async fn setstat<P: Into<String>>(
         &mut self,
-        path: T,
+        path: P,
         attrs: FileAttributes,
-    ) -> Result<Status, Error> {
+    ) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -297,11 +296,11 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsetstat<T: Into<String>>(
+    pub async fn fsetstat<H: Into<String>>(
         &mut self,
-        handle: T,
+        handle: H,
         attrs: FileAttributes,
-    ) -> Result<Status, Error> {
+    ) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -318,7 +317,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn opendir<T: Into<String>>(&mut self, path: T) -> Result<Handle, Error> {
+    pub async fn opendir<P: Into<String>>(&mut self, path: P) -> SftpResult<Handle> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -334,7 +333,7 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn readdir<T: Into<String>>(&mut self, handle: T) -> Result<Name, Error> {
+    pub async fn readdir<H: Into<String>>(&mut self, handle: H) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -350,7 +349,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn remove<T: Into<String>>(&mut self, filename: T) -> Result<Status, Error> {
+    pub async fn remove<T: Into<String>>(&mut self, filename: T) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -366,11 +365,11 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn mkdir<T: Into<String>>(
+    pub async fn mkdir<P: Into<String>>(
         &mut self,
-        path: T,
+        path: P,
         attrs: FileAttributes,
-    ) -> Result<Status, Error> {
+    ) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -387,7 +386,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn rmdir<T: Into<String>>(&mut self, path: T) -> Result<Status, Error> {
+    pub async fn rmdir<P: Into<String>>(&mut self, path: P) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -403,7 +402,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn realpath<T: Into<String>>(&mut self, path: T) -> Result<Name, Error> {
+    pub async fn realpath<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -419,7 +418,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn stat<T: Into<String>>(&mut self, path: T) -> Result<Attrs, Error> {
+    pub async fn stat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -435,7 +434,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn rename<O, N>(&mut self, oldpath: O, newpath: N) -> Result<Status, Error>
+    pub async fn rename<O, N>(&mut self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
         O: Into<String>,
         N: Into<String>,
@@ -456,7 +455,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn readlink<T: Into<String>>(&mut self, path: T) -> Result<Name, Error> {
+    pub async fn readlink<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -472,7 +471,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn symlink<P, T>(&mut self, path: P, target: T) -> Result<Status, Error>
+    pub async fn symlink<P, T>(&mut self, path: P, target: T) -> SftpResult<Status>
     where
         P: Into<String>,
         T: Into<String>,
@@ -493,11 +492,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn extended(
-        &mut self,
-        request: String,
-        data: Vec<u8>,
-    ) -> Result<ExtendedReply, Error> {
+    pub async fn extended(&mut self, request: String, data: Vec<u8>) -> SftpResult<ExtendedReply> {
         let id = self.use_next_id();
         let result = self
             .send(Some(id), Extended { id, request, data }.into())

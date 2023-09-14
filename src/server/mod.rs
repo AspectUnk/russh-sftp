@@ -79,7 +79,7 @@ where
         loop {
             match process_handler(&mut stream, &mut handler).await {
                 Err(Error::UnexpectedEof) => break,
-                Err(err) => error!("{}", err),
+                Err(err) => warn!("{}", err),
                 Ok(_) => (),
             }
         }

@@ -39,7 +39,7 @@ async fn main() {
     if session.authenticate_password("root", "pass").await.unwrap() {
         let mut channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
-        let mut sftp = SftpSession::new(channel.into_stream()).await.unwrap();
+        let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
         println!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
 
         let path = "./some_kind_of_dir";
@@ -60,5 +60,8 @@ async fn main() {
 
         sftp.remove_file(symlink).await.unwrap();
         sftp.remove_dir(path).await.unwrap();
+
+        let file = sftp.open("./test_open.txt").await.unwrap();
+        println!("metadata by handle: {:?}", file.metadata().await.unwrap());
     }
 }

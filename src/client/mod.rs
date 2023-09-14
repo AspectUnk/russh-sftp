@@ -1,5 +1,5 @@
 mod error;
-mod fs;
+pub mod fs;
 mod handler;
 mod rawsession;
 mod session;
@@ -52,7 +52,7 @@ where
                 result = process_handler(&mut stream, &mut handler) => {
                     match result {
                         Err(Error::UnexpectedEof) => break,
-                        Err(err) => error!("{}", err),
+                        Err(err) => warn!("{}", err),
                         Ok(_) => (),
                     }
                 }

@@ -101,6 +101,11 @@ impl FileAttributes {
         self.permissions = Some(perms & !r#type.bits());
     }
 
+    /// Returns `true` if is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Returns the size of the file
     pub fn len(&self) -> u64 {
         self.size.unwrap_or(0)
