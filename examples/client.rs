@@ -70,15 +70,17 @@ async fn main() {
         println!("metadata by handle: {:?}", file.metadata().await.unwrap());
 
         file.write_all(b"magic text").await.unwrap();
-
-        let mut str = String::new();
-        file.read_to_string(&mut str).await.unwrap();
         println!(
             "current cursor position: {:?}",
             file.stream_position().await
         );
 
+        let mut str = String::new();
+
         file.rewind().await.unwrap();
+        file.read_to_string(&mut str).await.unwrap();
+        file.rewind().await.unwrap();
+
         println!(
             "our magical contents: {}, after rewind: {:?}",
             str,

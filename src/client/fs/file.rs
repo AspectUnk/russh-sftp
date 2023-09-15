@@ -225,6 +225,10 @@ impl AsyncWrite for File {
             self.state.f_write = None;
         }
 
+        if let Poll::Ready(Ok(len)) = poll {
+            self.pos += len as u64;
+        }
+
         poll
     }
 
