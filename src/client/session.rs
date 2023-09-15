@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use tokio::{
-    io::{AsyncRead, AsyncWrite},
+    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     sync::Mutex,
 };
 
@@ -45,8 +45,11 @@ impl SftpSession {
     }
 
     pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
-        self.open_with_flags(filename, OpenFlags::CREATE | OpenFlags::READ | OpenFlags::WRITE)
-            .await
+        self.open_with_flags(
+            filename,
+            OpenFlags::CREATE | OpenFlags::READ | OpenFlags::WRITE,
+        )
+        .await
     }
 
     pub async fn open_with_flags<T: Into<String>>(
@@ -87,6 +90,29 @@ impl SftpSession {
             .mkdir(path, FileAttributes::default())
             .await
             .map(|_| ())
+    }
+
+    pub async fn read<P: Into<String>>(&self, path: P) -> SftpResult<Vec<u8>> {
+        let mut file = self.open(path).await?;
+        let mut buffer = Vec::new();
+
+        file.read_to_end(&mut buffer).await?;
+        
+        Ok(buffer)
+    }
+
+    pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
+        let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
+        file.write_all(data).await?;
+        Ok(())
+    }
+
+    pub async fn try_exists<P: Into<String>>(&self, path: P) -> SftpResult<bool> {
+        match self.metadata(path).await {
+            Ok(_) => Ok(true),
+            Err(Error::Status(status)) if status.status_code == StatusCode::NoSuchFile => Ok(false),
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {

@@ -1,3 +1,4 @@
+use std::io;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError as MpscSendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
@@ -11,6 +12,9 @@ pub enum Error {
     /// Contains an error status packet
     #[error("{}: {}", .0.status_code, .0.error_message)]
     Status(Status),
+    /// Any errors related to I/O
+    #[error("I/O: {0}")]
+    IO(String),
     /// Time limit for receiving response packet exceeded
     #[error("Timeout")]
     Timeout,
@@ -25,6 +29,12 @@ pub enum Error {
 impl From<Status> for Error {
     fn from(status: Status) -> Self {
         Self::Status(status)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(error: io::Error) -> Self {
+        Self::IO(error.to_string())
     }
 }
 
