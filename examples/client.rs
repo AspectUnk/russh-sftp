@@ -66,7 +66,7 @@ async fn main() {
 
         // interaction with i/o
         let filename = "test_new.txt";
-        let mut file = sftp.create("test_new.txt").await.unwrap();
+        let mut file = sftp.create(filename).await.unwrap();
         println!("metadata by handle: {:?}", file.metadata().await.unwrap());
 
         file.write_all(b"magic text").await.unwrap();
@@ -74,7 +74,13 @@ async fn main() {
         let mut str = String::new();
         file.read_to_string(&mut str).await.unwrap();
         println!(
-            "our magical contents: {:?}, cursor position: {:?}",
+            "current cursor position: {:?}",
+            file.stream_position().await
+        );
+
+        file.rewind().await.unwrap();
+        println!(
+            "our magical contents: {}, after rewind: {:?}",
             str,
             file.stream_position().await
         );
