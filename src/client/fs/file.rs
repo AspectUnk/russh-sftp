@@ -37,6 +37,7 @@ pub struct File {
     handle: String,
     state: FileState,
     pos: u64,
+    closed: bool,
 }
 
 impl File {
@@ -52,6 +53,7 @@ impl File {
                 f_shutdown: None,
             },
             pos: 0,
+            closed: false,
         }
     }
 
@@ -77,6 +79,10 @@ impl File {
 
 impl Drop for File {
     fn drop(&mut self) {
+        if self.closed {
+            return;
+        }
+
         if let Ok(handle) = Handle::try_current() {
             let session = self.session.to_owned();
             let file_handle = self.handle.to_owned();
@@ -247,6 +253,7 @@ impl AsyncWrite for File {
 
         if poll.is_ready() {
             self.state.f_shutdown = None;
+            self.closed = true;
         }
 
         poll
