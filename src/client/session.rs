@@ -41,18 +41,35 @@ impl SftpSession {
     }
 
     pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+        self.open_with_flags(filename, OpenFlags::READ).await
+    }
+
+    pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+        self.open_with_flags(filename, OpenFlags::CREATE | OpenFlags::READ | OpenFlags::WRITE)
+            .await
+    }
+
+    pub async fn open_with_flags<T: Into<String>>(
+        &self,
+        filename: T,
+        flags: OpenFlags,
+    ) -> SftpResult<File> {
         let handle = self
             .session
             .lock()
             .await
-            .open(filename, OpenFlags::READ, FileAttributes::default())
+            .open(
+                filename,
+                flags,
+                FileAttributes {
+                    permissions: Some(0o755 | flags.bits()),
+                    ..Default::default()
+                },
+            )
             .await?
             .handle;
 
-        Ok(File {
-            session: self.session.clone(),
-            handle,
-        })
+        Ok(File::new(self.session.clone(), handle))
     }
 
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {

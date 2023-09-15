@@ -22,7 +22,7 @@ pub(crate) struct SessionInner {
 }
 
 impl SessionInner {
-    pub async fn reply(&mut self, id: Option<u32>, packet: Packet) -> Result<(), Error> {
+    pub async fn reply(&mut self, id: Option<u32>, packet: Packet) -> SftpResult<()> {
         let mut requests = self.requests.lock().await;
 
         if let Some(idx) = requests.iter().position(|&(i, _)| i == id) {
@@ -38,7 +38,7 @@ impl SessionInner {
                 .remove(idx)
                 .1
                 .send(validate.clone().map(|_| packet));
-
+            
             return validate;
         }
 
@@ -225,7 +225,7 @@ impl RawSftpSession {
         handle: H,
         offset: u64,
         data: Vec<u8>,
-    ) -> Result<Status, Error> {
+    ) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(

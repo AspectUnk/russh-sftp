@@ -41,7 +41,7 @@ bitflags! {
 }
 
 /// Used in the implementation of other packets.
-/// Implements most [Metadata](std::fs::Metadata) methods
+/// Implements most [`Metadata`](std::fs::Metadata) methods
 ///
 /// The fields `user` and `group` are string names of users and groups for
 /// clients that can be displayed in longname. Can be omitted.
