@@ -37,11 +37,8 @@ where
             A: serde::de::SeqAccess<'de>,
         {
             let mut data = Vec::new();
-            loop {
-                match seq.next_element::<u8>()? {
-                    Some(byte) => data.put_u8(byte),
-                    None => break,
-                }
+            while let Some(byte) = seq.next_element::<u8>()? {
+                data.put_u8(byte);
             }
             Ok(data)
         }

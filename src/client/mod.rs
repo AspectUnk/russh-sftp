@@ -37,11 +37,9 @@ where
         Packet::Name(p) => into_wrap!(handler.name(p)),
         Packet::Attrs(p) => into_wrap!(handler.attrs(p)),
         Packet::ExtendedReply(p) => into_wrap!(handler.extended_reply(p)),
-        _ => {
-            return Err(error::Error::UnexpectedBehavior(
-                "A packet was received that could not be processed.".to_owned(),
-            ))
-        }
+        _ => Err(error::Error::UnexpectedBehavior(
+            "A packet was received that could not be processed.".to_owned(),
+        )),
     }
 }
 

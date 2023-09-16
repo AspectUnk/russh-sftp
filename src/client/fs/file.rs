@@ -146,7 +146,7 @@ impl AsyncRead for File {
         let offset = self.pos;
 
         let poll = Pin::new(self.state.f_read.get_or_insert(Box::pin(async move {
-            let limit = limits.map(|l| l.read_len).flatten().unwrap_or(4) as usize;
+            let limit = limits.and_then(|l| l.read_len).unwrap_or(4) as usize;
             let len = if remaining > limit { limit } else { remaining };
 
             let result = session.lock().await.read(handle, offset, len as u32).await;
@@ -250,7 +250,7 @@ impl AsyncWrite for File {
         let data = buf.to_vec();
 
         let poll = Pin::new(self.state.f_write.get_or_insert(Box::pin(async move {
-            let limit = limits.map(|l| l.write_len).flatten().unwrap_or(261120) as usize;
+            let limit = limits.and_then(|l| l.read_len).unwrap_or(261120) as usize;
             let len = if data.len() > limit {
                 limit
             } else {
@@ -260,7 +260,7 @@ impl AsyncWrite for File {
             session
                 .lock()
                 .await
-                .write(handle, offset, (&data[..len]).to_vec())
+                .write(handle, offset, data[..len].to_vec())
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
