@@ -3,21 +3,21 @@ SFTP subsystem supported server and client for [Russh](https://github.com/warp-t
 Implemented according to [version 3 specifications](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02) (most popular)
 
 ## Examples
+- [Client example](https://github.com/AspectUnk/russh-sftp/blob/master/examples/client.rs)
 - [Simple server](https://github.com/AspectUnk/russh-sftp/blob/master/examples/server.rs)
-- ~~Fully implemented server~~
-- ~~Client example~~
 
 ## What's ready?
 - [x] Basic packets
 - [x] Extended packets
 - [x] Simplification for file attributes
+- [x] Client side
+- [x] Client example
 - [x] Server side
 - [x] Simple server example
+- [x] Extension support: `limits@openssh.com`, `fsync@openssh.com`
 - [ ] Full server example
 - [ ] Unit tests
 - [ ] Workflow
-- [ ] Client side
-- [ ] Client example
 
 ## Some words
 Thanks to [@Eugeny](https://github.com/Eugeny) (author of the [Russh](https://github.com/warp-tech/russh)) for his prompt help and finalization of Russh API

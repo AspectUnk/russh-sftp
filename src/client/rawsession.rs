@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use std::{sync::Arc, time::Duration};
+use std::{num::Wrapping, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     sync::{mpsc, oneshot, Mutex},
@@ -7,10 +7,13 @@ use tokio::{
 };
 
 use super::{error::Error, run, Handler};
-use crate::protocol::{
-    Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
-    Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
-    Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
+use crate::{
+    extensions::LimitsExtension,
+    protocol::{
+        Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
+        Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
+        Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
+    },
 };
 
 pub type SftpResult<T> = Result<T, Error>;
@@ -38,7 +41,7 @@ impl SessionInner {
                 .remove(idx)
                 .1
                 .send(validate.clone().map(|_| packet));
-            
+
             return validate;
         }
 
@@ -85,6 +88,41 @@ impl Handler for SessionInner {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Limits {
+    //pub packet_len: Option<u64>,
+    pub read_len: Option<u64>,
+    pub write_len: Option<u64>,
+    pub open_handles: Option<u64>,
+}
+
+impl From<LimitsExtension> for Limits {
+    fn from(limits: LimitsExtension) -> Self {
+        Self {
+            read_len: if limits.max_read_len > 0 {
+                Some(limits.max_read_len)
+            } else {
+                None
+            },
+            write_len: if limits.max_write_len > 0 {
+                Some(limits.max_write_len)
+            } else {
+                None
+            },
+            open_handles: if limits.max_open_handles > 0 {
+                Some(limits.max_open_handles)
+            } else {
+                None
+            },
+        }
+    }
+}
+
+pub(crate) struct Options {
+    timeout: u64,
+    limits: Arc<Limits>,
+}
+
 /// Implements raw work with the protocol in request-response format.
 /// If the server returns a `Status` packet and it has the code Ok
 /// then the packet is returned as Ok in other error cases
@@ -93,6 +131,8 @@ pub struct RawSftpSession {
     tx: mpsc::UnboundedSender<Bytes>,
     requests: Arc<SharedData>,
     next_req_id: u32,
+    handles: Wrapping<u64>,
+    options: Options,
 }
 
 macro_rules! into_with_status {
@@ -130,7 +170,23 @@ impl RawSftpSession {
             tx: run(stream, inner),
             requests: arc,
             next_req_id: 0,
+            handles: Wrapping(0),
+            options: Options {
+                timeout: 10,
+                limits: Arc::new(Limits::default()),
+            },
         }
+    }
+
+    /// Set the maximum response time in seconds.
+    /// Default: 10 seconds
+    pub fn set_timeout(&mut self, secs: u64) {
+        self.options.timeout = secs;
+    }
+
+    /// Setting limits. For the `limits@openssh.com` extension
+    pub fn set_limits(&mut self, limits: Arc<Limits>) {
+        self.options.limits = limits;
     }
 
     async fn send(&self, id: Option<u32>, packet: Packet) -> SftpResult<Packet> {
@@ -139,8 +195,13 @@ impl RawSftpSession {
         self.requests.lock().await.push((id, tx));
         self.tx.send(Bytes::try_from(packet)?)?;
 
-        // todo: remove from requests
-        timeout(Duration::from_secs(10), rx).await??
+        match timeout(Duration::from_secs(self.options.timeout), rx).await {
+            Ok(result) => result?,
+            Err(error) => {
+                self.requests.lock().await.retain(|&(i, _)| i != id);
+                Err(error.into())
+            }
+        }
     }
 
     fn use_next_id(&mut self) -> u32 {
@@ -164,6 +225,15 @@ impl RawSftpSession {
         flags: OpenFlags,
         attrs: FileAttributes,
     ) -> SftpResult<Handle> {
+        if self
+            .options
+            .limits
+            .open_handles
+            .is_some_and(|h| self.handles >= Wrapping(h))
+        {
+            return Err(Error::Limited("Handle limit reached".to_owned()));
+        }
+
         let id = self.use_next_id();
         let result = self
             .send(
@@ -177,6 +247,10 @@ impl RawSftpSession {
                 .into(),
             )
             .await?;
+
+        if let Packet::Handle(_) = result {
+            self.handles += 1;
+        }
 
         into_with_status!(result, Handle)
     }
@@ -194,6 +268,11 @@ impl RawSftpSession {
             )
             .await?;
 
+        if let Packet::Status(status) = &result {
+            println!("status: {} {:?}", self.handles, status);
+            self.handles -= 1;
+        }
+
         into_status!(result)
     }
 
@@ -203,6 +282,10 @@ impl RawSftpSession {
         offset: u64,
         len: u32,
     ) -> SftpResult<Data> {
+        if self.options.limits.read_len.is_some_and(|r| len as u64 > r) {
+            return Err(Error::Limited("Write limit reached".to_owned()));
+        }
+
         let id = self.use_next_id();
         let result = self
             .send(
@@ -226,6 +309,15 @@ impl RawSftpSession {
         offset: u64,
         data: Vec<u8>,
     ) -> SftpResult<Status> {
+        if self
+            .options
+            .limits
+            .write_len
+            .is_some_and(|w| data.len() as u64 > w)
+        {
+            return Err(Error::Limited("Write limit reached".to_owned()));
+        }
+
         let id = self.use_next_id();
         let result = self
             .send(
@@ -318,6 +410,15 @@ impl RawSftpSession {
     }
 
     pub async fn opendir<P: Into<String>>(&mut self, path: P) -> SftpResult<Handle> {
+        if self
+            .options
+            .limits
+            .open_handles
+            .is_some_and(|h| self.handles >= Wrapping(h))
+        {
+            return Err(Error::Limited("Handle limit reached".to_owned()));
+        }
+
         let id = self.use_next_id();
         let result = self
             .send(
@@ -329,6 +430,11 @@ impl RawSftpSession {
                 .into(),
             )
             .await?;
+
+        if let Packet::Handle(_) = result {
+            println!("open handle");
+            self.handles += 1;
+        }
 
         into_with_status!(result, Handle)
     }
@@ -492,12 +598,23 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn extended(&mut self, request: String, data: Vec<u8>) -> SftpResult<ExtendedReply> {
+    /// Equivalent to `SSH_FXP_EXTENDED`. Allows protocol expansion.
+    /// The extension can return any packet, so it's not specific
+    pub async fn extended<R: Into<String>>(
+        &mut self,
+        request: R,
+        data: Vec<u8>,
+    ) -> SftpResult<Packet> {
         let id = self.use_next_id();
-        let result = self
-            .send(Some(id), Extended { id, request, data }.into())
-            .await?;
-
-        into_with_status!(result, ExtendedReply)
+        self.send(
+            Some(id),
+            Extended {
+                id,
+                request: request.into(),
+                data,
+            }
+            .into(),
+        )
+        .await
     }
 }

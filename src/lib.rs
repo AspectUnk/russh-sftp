@@ -10,11 +10,12 @@ extern crate serde;
 mod buf;
 /// Client side
 pub mod client;
-mod de;
+pub mod de;
 mod error;
+pub mod extensions;
 /// Protocol implementation
 pub mod protocol;
-mod ser;
+pub mod ser;
 /// Server side
 pub mod server;
 mod utils;

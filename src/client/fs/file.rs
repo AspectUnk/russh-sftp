@@ -13,8 +13,10 @@ use tokio::{
 
 use super::Metadata;
 use crate::{
-    client::{error::Error, rawsession::SftpResult, RawSftpSession},
-    protocol::StatusCode,
+    client::{error::Error, rawsession::SftpResult, session::Extensions, RawSftpSession},
+    error,
+    extensions::FsyncExtension,
+    protocol::{Packet, StatusCode},
 };
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
@@ -23,7 +25,7 @@ pub struct FileState {
     f_read: StateFn<Option<Vec<u8>>>,
     f_seek: StateFn<u64>,
     f_write: StateFn<usize>,
-    _f_flush: StateFn<()>,
+    f_flush: StateFn<()>,
     f_shutdown: StateFn<()>,
 }
 
@@ -38,10 +40,15 @@ pub struct File {
     state: FileState,
     pos: u64,
     closed: bool,
+    extensions: Arc<Extensions>,
 }
 
 impl File {
-    pub(crate) fn new(session: Arc<Mutex<RawSftpSession>>, handle: String) -> Self {
+    pub(crate) fn new(
+        session: Arc<Mutex<RawSftpSession>>,
+        handle: String,
+        extensions: Arc<Extensions>,
+    ) -> Self {
         Self {
             session,
             handle,
@@ -49,11 +56,12 @@ impl File {
                 f_read: None,
                 f_seek: None,
                 f_write: None,
-                _f_flush: None,
+                f_flush: None,
                 f_shutdown: None,
             },
             pos: 0,
             closed: false,
+            extensions,
         }
     }
 
@@ -74,6 +82,35 @@ impl File {
             .fsetstat(self.handle.as_str(), metadata)
             .await
             .map(|_| ())
+    }
+
+    /// Attempts to sync all data.
+    ///
+    /// If the server does not support `fsync@openssh.com` sending the request will
+    /// be omitted, but will still pseudo-successfully
+    pub async fn sync_all(&self) -> SftpResult<()> {
+        if !self.extensions.fsync {
+            return Ok(());
+        }
+
+        let result = self
+            .session
+            .lock()
+            .await
+            .extended(
+                "fsync@openssh.com",
+                FsyncExtension {
+                    handle: self.handle.to_owned(),
+                }
+                .try_into()?,
+            )
+            .await;
+
+        match result {
+            Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
+            Err(error) => Err(error),
+            _ => Err(Error::UnexpectedPacket),
+        }
     }
 }
 
@@ -101,16 +138,16 @@ impl AsyncRead for File {
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
         let session = self.session.to_owned();
-        let file_handle = self.handle.to_owned();
+        let limits = self.extensions.limits.to_owned();
+        let handle = self.handle.to_owned();
         let remaining = buf.remaining();
         let offset = self.pos;
 
         let poll = Pin::new(self.state.f_read.get_or_insert(Box::pin(async move {
-            let result = session
-                .lock()
-                .await
-                .read(file_handle, offset, remaining as u32)
-                .await;
+            let limit = limits.map(|l| l.read_len).flatten().unwrap_or(4) as usize;
+            let len = if remaining > limit { limit } else { remaining };
+
+            let result = session.lock().await.read(handle, offset, len as u32).await;
 
             match result {
                 Ok(data) => Ok(Some(data.data)),
@@ -205,18 +242,26 @@ impl AsyncWrite for File {
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
         let session = self.session.to_owned();
-        let file_handle = self.handle.to_owned();
+        let limits = self.extensions.limits.to_owned();
+        let handle = self.handle.to_owned();
         let offset = self.pos;
         let data = buf.to_vec();
 
         let poll = Pin::new(self.state.f_write.get_or_insert(Box::pin(async move {
-            let len = data.len();
+            let limit = limits.map(|l| l.write_len).flatten().unwrap_or(261120) as usize;
+            let len = if data.len() > limit {
+                limit
+            } else {
+                data.len()
+            };
+
             session
                 .lock()
                 .await
-                .write(file_handle, offset, data)
+                .write(handle, offset, (&data[..len]).to_vec())
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+
             Ok(len)
         })))
         .poll(cx);
@@ -232,9 +277,41 @@ impl AsyncWrite for File {
         poll
     }
 
-    fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
-        // todo: fsync@openssh.com required to use
-        Poll::Ready(Ok(()))
+    fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), io::Error>> {
+        if !self.extensions.fsync {
+            return Poll::Ready(Ok(()));
+        }
+
+        let session = self.session.to_owned();
+        let handle = self.handle.to_owned();
+
+        let poll = Pin::new(self.state.f_flush.get_or_insert(Box::pin(async move {
+            let result = session
+                .lock()
+                .await
+                .extended(
+                    "fsync@openssh.com",
+                    FsyncExtension { handle }
+                        .try_into()
+                        .map_err(|e: error::Error| {
+                            io::Error::new(io::ErrorKind::Other, e.to_string())
+                        })?,
+                )
+                .await;
+
+            match result {
+                Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
+                Err(error) => Err(io::Error::new(io::ErrorKind::Other, error.to_string())),
+                _ => Err(io::Error::new(io::ErrorKind::Other, "Unexpected packet")),
+            }
+        })))
+        .poll(cx);
+
+        if poll.is_ready() {
+            self.state.f_flush = None;
+        }
+
+        poll
     }
 
     fn poll_shutdown(

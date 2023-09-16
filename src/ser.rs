@@ -10,6 +10,7 @@ pub struct Serializer {
     output: BytesMut,
 }
 
+/// Converting type to bytes according to protocol
 pub fn to_bytes<T>(value: &T) -> Result<Bytes, Error>
 where
     T: serde::Serialize,
@@ -19,6 +20,18 @@ where
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output.freeze())
+}
+
+/// Serialization of a [`Vec`] without length.
+pub fn data_serialize<S>(data: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut seq = serializer.serialize_seq(None)?;
+    for byte in data {
+        seq.serialize_element(byte)?;
+    }
+    seq.end()
 }
 
 impl<'a> serde::Serializer for &'a mut Serializer {
@@ -146,7 +159,10 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        self.output.put_u32(len.unwrap_or(0) as u32);
+        if let Some(len) = len {
+            self.output.put_u32(len as u32);
+        }
+
         Ok(self)
     }
 

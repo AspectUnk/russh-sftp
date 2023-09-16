@@ -70,6 +70,7 @@ async fn main() {
         println!("metadata by handle: {:?}", file.metadata().await.unwrap());
 
         file.write_all(b"magic text").await.unwrap();
+        println!("flush: {:?}", file.flush().await); // or file.sync_all()
         println!(
             "current cursor position: {:?}",
             file.stream_position().await

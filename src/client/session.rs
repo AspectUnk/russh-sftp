@@ -7,37 +7,74 @@ use tokio::{
 use super::{
     error::Error,
     fs::{File, Metadata, ReadDir},
-    rawsession::SftpResult,
+    rawsession::{Limits, SftpResult},
     RawSftpSession,
 };
-use crate::protocol::{FileAttributes, OpenFlags, StatusCode};
+use crate::{
+    de,
+    extensions::LimitsExtension,
+    protocol::{FileAttributes, OpenFlags, Packet, StatusCode},
+};
+
+#[derive(Debug, Default)]
+pub(crate) struct Extensions {
+    pub fsync: bool,
+    pub limits: Option<Arc<Limits>>,
+}
 
 /// High-level SFTP implementation for easy interaction with a remote file system.
 /// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
     session: Arc<Mutex<RawSftpSession>>,
+    extensions: Arc<Extensions>,
 }
 
 impl SftpSession {
+    /// Creates a new session by initializing the protocol and extensions
     pub async fn new<S>(stream: S) -> SftpResult<Self>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let session = RawSftpSession::new(stream);
+        let mut session = RawSftpSession::new(stream);
         let version = session.init().await?;
 
-        // todo: implement limit request
-        if version.extensions["limits@openssh.com"] == "1" {
-            println!("has limits");
-            // let reply = session
-            //     .extended("limits@openssh.com".to_owned(), vec![])
-            //     .await?;
-            // println!("{:?}", reply);
+        let mut extensions = Extensions {
+            fsync: version
+                .extensions
+                .get("fsync@openssh.com")
+                .is_some_and(|e| e == "1"),
+            limits: None,
+        };
+
+        if version
+            .extensions
+            .get("limits@openssh.com")
+            .is_some_and(|e| e == "1")
+        {
+            let packet = session.extended("limits@openssh.com", vec![]).await?;
+            match packet {
+                Packet::ExtendedReply(reply) => {
+                    let ext = de::from_bytes::<LimitsExtension>(&mut reply.data.into())?;
+                    println!("{:?}", ext);
+                    let limits = Arc::new(Limits::from(ext));
+
+                    session.set_limits(limits.clone());
+                    extensions.limits = Some(limits);
+                }
+                _ => return Err(Error::UnexpectedPacket),
+            }
         }
 
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
+            extensions: Arc::new(extensions),
         })
+    }
+
+    /// Set the maximum response time in seconds.
+    /// Default: 10 seconds
+    pub async fn set_timeout(&self, secs: u64) {
+        self.session.lock().await.set_timeout(secs);
     }
 
     pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
@@ -72,7 +109,11 @@ impl SftpSession {
             .await?
             .handle;
 
-        Ok(File::new(self.session.clone(), handle))
+        Ok(File::new(
+            self.session.clone(),
+            handle,
+            self.extensions.clone(),
+        ))
     }
 
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
@@ -97,7 +138,7 @@ impl SftpSession {
         let mut buffer = Vec::new();
 
         file.read_to_end(&mut buffer).await?;
-        
+
         Ok(buffer)
     }
 

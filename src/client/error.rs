@@ -18,6 +18,8 @@ pub enum Error {
     /// Time limit for receiving response packet exceeded
     #[error("Timeout")]
     Timeout,
+    #[error("Limit exceeded: {0}")]
+    Limited(String),
     /// Occurs when an unexpected packet is sent
     #[error("Unexpected packet")]
     UnexpectedPacket,
