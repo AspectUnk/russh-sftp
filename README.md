@@ -1,6 +1,7 @@
 # Russh SFTP
-SFTP subsystem supported server and client for [Russh](https://github.com/warp-tech/russh)\
-Implemented according to [version 3 specifications](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02) (most popular)
+SFTP subsystem supported server and client for [Russh](https://github.com/warp-tech/russh) and more!\
+Crate can provide compatibility with anything that can provide the raw data stream in and out of the subsystem channel.\
+Implemented according to [version 3 specifications](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02) (most popular).
 
 ## Examples
 - [Client example](https://github.com/AspectUnk/russh-sftp/blob/master/examples/client.rs)

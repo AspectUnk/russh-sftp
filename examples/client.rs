@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use log::{error, info, LevelFilter};
 use russh::*;
 use russh_keys::*;
 use russh_sftp::client::SftpSession;
@@ -15,7 +16,7 @@ impl client::Handler for Client {
         self,
         server_public_key: &key::PublicKey,
     ) -> Result<(Self, bool), Self::Error> {
-        println!("check_server_key: {:?}", server_public_key);
+        info!("check_server_key: {:?}", server_public_key);
         Ok((self, true))
     }
 
@@ -25,13 +26,17 @@ impl client::Handler for Client {
         data: &[u8],
         session: client::Session,
     ) -> Result<(Self, client::Session), Self::Error> {
-        println!("data on channel {:?}: {}", channel, data.len());
+        info!("data on channel {:?}: {}", channel, data.len());
         Ok((self, session))
     }
 }
 
 #[tokio::main]
 async fn main() {
+    env_logger::builder()
+        .filter_level(LevelFilter::Debug)
+        .init();
+
     let config = russh::client::Config::default();
     let sh = Client {};
     let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
@@ -41,7 +46,7 @@ async fn main() {
         let mut channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
         let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
-        println!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
+        info!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
 
         // create dir and symlink
         let path = "./some_kind_of_dir";
@@ -50,15 +55,15 @@ async fn main() {
         sftp.create_dir(path).await.unwrap();
         sftp.symlink(path, symlink).await.unwrap();
 
-        println!("dir info: {:?}", sftp.metadata(path).await.unwrap());
-        println!(
+        info!("dir info: {:?}", sftp.metadata(path).await.unwrap());
+        info!(
             "symlink info: {:?}",
             sftp.symlink_metadata(path).await.unwrap()
         );
 
         // scanning directory
         for entry in sftp.read_dir(".").await.unwrap() {
-            println!("file in directory: {:?}", entry.file_name());
+            info!("file in directory: {:?}", entry.file_name());
         }
 
         sftp.remove_file(symlink).await.unwrap();
@@ -67,11 +72,11 @@ async fn main() {
         // interaction with i/o
         let filename = "test_new.txt";
         let mut file = sftp.create(filename).await.unwrap();
-        println!("metadata by handle: {:?}", file.metadata().await.unwrap());
+        info!("metadata by handle: {:?}", file.metadata().await.unwrap());
 
         file.write_all(b"magic text").await.unwrap();
-        println!("flush: {:?}", file.flush().await); // or file.sync_all()
-        println!(
+        info!("flush: {:?}", file.flush().await); // or file.sync_all()
+        info!(
             "current cursor position: {:?}",
             file.stream_position().await
         );
@@ -82,7 +87,7 @@ async fn main() {
         file.read_to_string(&mut str).await.unwrap();
         file.rewind().await.unwrap();
 
-        println!(
+        info!(
             "our magical contents: {}, after rewind: {:?}",
             str,
             file.stream_position().await
@@ -92,6 +97,6 @@ async fn main() {
         sftp.remove_file(filename).await.unwrap();
 
         // should fail because handle was closed
-        println!("should fail: {:?}", file.read_u8().await);
+        error!("should fail: {:?}", file.read_u8().await);
     }
 }
