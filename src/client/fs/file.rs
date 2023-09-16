@@ -21,6 +21,9 @@ use crate::{
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
 
+const MAX_READ_PACKET: u64 = 261120;
+const MAX_WRITE_PACKET: u64 = 261120;
+
 pub(crate) struct FileState {
     f_read: StateFn<Option<Vec<u8>>>,
     f_seek: StateFn<u64>,
@@ -146,7 +149,7 @@ impl AsyncRead for File {
         let offset = self.pos;
 
         let poll = Pin::new(self.state.f_read.get_or_insert(Box::pin(async move {
-            let limit = limits.and_then(|l| l.read_len).unwrap_or(4) as usize;
+            let limit = limits.and_then(|l| l.read_len).unwrap_or(MAX_READ_PACKET) as usize;
             let len = if remaining > limit { limit } else { remaining };
 
             let result = session.lock().await.read(handle, offset, len as u32).await;
@@ -250,7 +253,7 @@ impl AsyncWrite for File {
         let data = buf.to_vec();
 
         let poll = Pin::new(self.state.f_write.get_or_insert(Box::pin(async move {
-            let limit = limits.and_then(|l| l.read_len).unwrap_or(261120) as usize;
+            let limit = limits.and_then(|l| l.read_len).unwrap_or(MAX_WRITE_PACKET) as usize;
             let len = if data.len() > limit {
                 limit
             } else {
