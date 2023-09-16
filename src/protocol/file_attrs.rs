@@ -1,17 +1,26 @@
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize};
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
-use std::{fmt, fs::Metadata, time::UNIX_EPOCH};
+use std::{
+    fmt,
+    fs::Metadata,
+    io::ErrorKind,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use crate::utils;
 
 /// Attributes flags according to the specification
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileAttr(u32);
 
-/// Types according to mode unix
-#[derive(Default, Serialize, Deserialize)]
-pub struct FileType(u32);
+/// Type according to mode unix
+#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileMode(u32);
+
+/// Type describing permission flags
+#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePermissionFlags(u32);
 
 bitflags! {
     impl FileAttr: u32 {
@@ -22,28 +31,147 @@ bitflags! {
         const EXTENDED = 0x80000000;
     }
 
-    impl FileType: u32 {
+    impl FileMode: u32 {
         const FIFO = 0x1000;
         const CHR = 0x2000;
         const DIR = 0x4000;
+        const NAM = 0x5000;
         const BLK = 0x6000;
         const REG = 0x8000;
         const LNK = 0xA000;
-        const NAM = 0x5000;
+        const SOCK = 0xC000;
     }
 
-    // TODO: Add FilePermission
+    impl FilePermissionFlags: u32 {
+        const OTHER_READ = 0o4;
+        const OTHER_WRITE = 0o2;
+        const OTHER_EXEC = 0o1;
+        const GROUP_READ = 0o40;
+        const GROUP_WRITE = 0o20;
+        const GROUP_EXEC = 0o10;
+        const OWNER_READ = 0o400;
+        const OWNER_WRITE = 0o200;
+        const OWNER_EXEC = 0o100;
+    }
 }
 
-/// Used in the implementation of other packages.
+/// Represents a simplified version of the [`FileMode`]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileType {
+    Dir,
+    File,
+    Symlink,
+    Other,
+}
+
+impl FileType {
+    /// Returns `true` if the file is a directory
+    pub fn is_dir(&self) -> bool {
+        matches!(self, Self::Dir)
+    }
+
+    /// Returns `true` if the file is a file
+    pub fn is_file(&self) -> bool {
+        matches!(self, Self::File)
+    }
+
+    /// Returns `true` if the file is a symlink
+    pub fn is_symlink(&self) -> bool {
+        matches!(self, Self::Symlink)
+    }
+
+    /// Returns `true` if the file has a distinctive type
+    pub fn is_other(&self) -> bool {
+        matches!(self, Self::Other)
+    }
+}
+
+impl From<FileMode> for FileType {
+    fn from(mode: FileMode) -> Self {
+        if mode.contains(FileMode::DIR) {
+            FileType::Dir
+        } else if mode.contains(FileMode::REG) {
+            FileType::File
+        } else if mode.contains(FileMode::LNK) {
+            FileType::Symlink
+        } else {
+            FileType::Other
+        }
+    }
+}
+
+impl From<u32> for FileType {
+    fn from(mode: u32) -> Self {
+        FileMode::from_bits_truncate(mode).into()
+    }
+}
+
+#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePermissions {
+    pub other_exec: bool,
+    pub other_read: bool,
+    pub other_write: bool,
+    pub group_exec: bool,
+    pub group_read: bool,
+    pub group_write: bool,
+    pub owner_exec: bool,
+    pub owner_read: bool,
+    pub owner_write: bool,
+}
+
+impl FilePermissions {
+    /// Returns `true` if the file is read-only.
+    pub fn is_readonly(&self) -> bool {
+        !(self.owner_read || self.group_read || self.other_read)
+    }
+
+    /// Clears all flags or sets them to a positive value. Works uniquely for unix.
+    pub fn set_readonly(&mut self, readonly: bool) {
+        self.other_exec = !readonly;
+        self.other_write = !readonly;
+        self.group_exec = !readonly;
+        self.group_write = !readonly;
+        self.owner_exec = !readonly;
+        self.owner_write = !readonly;
+
+        if readonly {
+            self.other_read = true;
+            self.group_read = true;
+            self.owner_read = true;
+        }
+    }
+}
+
+impl From<FilePermissionFlags> for FilePermissions {
+    fn from(flags: FilePermissionFlags) -> Self {
+        Self {
+            other_read: flags.contains(FilePermissionFlags::OTHER_READ),
+            other_write: flags.contains(FilePermissionFlags::OTHER_WRITE),
+            other_exec: flags.contains(FilePermissionFlags::OTHER_EXEC),
+            group_read: flags.contains(FilePermissionFlags::GROUP_READ),
+            group_write: flags.contains(FilePermissionFlags::GROUP_WRITE),
+            group_exec: flags.contains(FilePermissionFlags::GROUP_EXEC),
+            owner_read: flags.contains(FilePermissionFlags::OWNER_READ),
+            owner_write: flags.contains(FilePermissionFlags::OWNER_WRITE),
+            owner_exec: flags.contains(FilePermissionFlags::OWNER_EXEC),
+        }
+    }
+}
+
+impl From<u32> for FilePermissions {
+    fn from(mode: u32) -> Self {
+        FilePermissionFlags::from_bits_truncate(mode).into()
+    }
+}
+
+/// Used in the implementation of other packets.
+/// Implements most [`Metadata`] methods
 ///
-/// The fields `user` and `group` are string names of users
-/// and groups for clients that can be displayed from longname.
-/// Can be omitted.
+/// The fields `user` and `group` are string names of users and groups for
+/// clients that can be displayed in longname. Can be omitted.
 ///
-/// The `flags` field is omitted because it
-/// is set by itself depending on the flags
-#[derive(Debug)]
+/// The `flags` field is omitted because it is set by itself depending on the flags
+#[derive(Debug, Clone)]
 pub struct FileAttributes {
     pub size: Option<u64>,
     pub uid: Option<u32>,
@@ -61,7 +189,7 @@ macro_rules! impl_fn_type {
         #[doc = $doc_name]
         pub fn $get_name(&self) -> bool {
             self.permissions.map_or(false, |b| {
-                FileType::from_bits_truncate(b).contains(FileType::$flag)
+                FileMode::from_bits_truncate(b).contains(FileMode::$flag)
             })
         }
 
@@ -70,8 +198,8 @@ macro_rules! impl_fn_type {
         #[doc = " or not"]
         pub fn $set_name(&mut self, $get_name: bool) {
             match $get_name {
-                true => self.set_type(FileType::$flag),
-                false => self.remove_type(FileType::$flag),
+                true => self.set_type(FileMode::$flag),
+                false => self.remove_type(FileMode::$flag),
             }
         }
     };
@@ -85,16 +213,52 @@ impl FileAttributes {
     impl_fn_type!(is_block, set_block, "block", BLK);
     impl_fn_type!(is_fifo, set_fifo, "fifo", FIFO);
 
-    /// Set type flag
-    pub fn set_type(&mut self, r#type: FileType) {
+    /// Set mode flag
+    pub fn set_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms | r#type.bits());
+        self.permissions = Some(perms | mode.bits());
     }
 
-    /// Remove type flag
-    pub fn remove_type(&mut self, r#type: FileType) {
+    /// Remove mode flag
+    pub fn remove_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms & !r#type.bits());
+        self.permissions = Some(perms & !mode.bits());
+    }
+
+    /// Returns the file type
+    pub fn file_type(&self) -> FileType {
+        FileMode::from_bits_truncate(self.permissions.unwrap_or_default()).into()
+    }
+
+    /// Returns `true` if is empty
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Returns the size of the file
+    pub fn len(&self) -> u64 {
+        self.size.unwrap_or(0)
+    }
+
+    /// Returns the permissions of the file this metadata is for.
+    pub fn permissions(&self) -> FilePermissions {
+        FilePermissionFlags::from_bits_truncate(self.permissions.unwrap_or_default()).into()
+    }
+
+    /// Returns the last access time
+    pub fn accessed(&self) -> std::io::Result<SystemTime> {
+        match self.atime {
+            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+            None => Err(ErrorKind::InvalidData.into()),
+        }
+    }
+
+    /// Returns the last modification time
+    pub fn modified(&self) -> std::io::Result<SystemTime> {
+        match self.mtime {
+            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+            None => Err(ErrorKind::InvalidData.into()),
+        }
     }
 }
 
@@ -107,7 +271,7 @@ impl Default for FileAttributes {
             user: None,
             gid: Some(0),
             group: None,
-            permissions: Some(0o777 | FileType::DIR.bits()),
+            permissions: Some(0o777 | FileMode::DIR.bits()),
             atime: Some(0),
             mtime: Some(0),
         }

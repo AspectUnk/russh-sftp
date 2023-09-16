@@ -1,13 +1,14 @@
 mod handler;
 
 use bytes::Bytes;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 
 pub use self::handler::Handler;
 
 use crate::{
     error::Error,
     protocol::{Packet, StatusCode},
+    utils::read_packet,
 };
 
 macro_rules! into_wrap {
@@ -17,18 +18,6 @@ macro_rules! into_wrap {
             Ok(packet) => packet.into(),
         }
     };
-}
-
-async fn read_buf<S>(stream: &mut S) -> Result<Bytes, Error>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    let length = stream.read_u32().await?;
-
-    let mut buf = vec![0; length as usize];
-    stream.read_exact(&mut buf).await?;
-
-    Ok(Bytes::from(buf))
 }
 
 async fn process_request<H>(packet: Packet, handler: &mut H) -> Packet
@@ -67,7 +56,7 @@ where
     H: Handler + Send,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut bytes = read_buf(stream).await?;
+    let mut bytes = read_packet(stream).await?;
 
     let response = match Packet::try_from(&mut bytes) {
         Ok(request) => process_request(request, handler).await,

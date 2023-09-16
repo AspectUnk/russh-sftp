@@ -1,5 +1,6 @@
-use bytes::{Buf, Bytes};
-use serde::de::{EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess};
+use bytes::{Buf, BufMut, Bytes};
+use serde::de::{EnumAccess, IntoDeserializer, MapAccess, SeqAccess, VariantAccess, Visitor};
+use std::fmt;
 
 use crate::{buf::TryBuf, error::Error};
 
@@ -7,12 +8,46 @@ pub struct Deserializer<'a> {
     input: &'a mut Bytes,
 }
 
+/// Converting bytes to protocol-compliant type
 pub fn from_bytes<'a, T>(bytes: &'a mut Bytes) -> Result<T, Error>
 where
     T: serde::Deserialize<'a>,
 {
     let mut deserializer = Deserializer { input: bytes };
     T::deserialize(&mut deserializer)
+}
+
+/// Deserilization of a [`Vec`] without length. Usually reads until the end byte
+/// or end of the packet because the size is unknown.
+pub fn data_deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct DataVisitor;
+
+    impl<'de> Visitor<'de> for DataVisitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("data")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut data = Vec::new();
+            loop {
+                match seq.next_element::<u8>()? {
+                    Some(byte) => data.put_u8(byte),
+                    None => break,
+                }
+            }
+            Ok(data)
+        }
+    }
+
+    deserializer.deserialize_any(DataVisitor)
 }
 
 impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
@@ -23,42 +58,45 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
         V: serde::de::Visitor<'de>,
     {
         let len = self.input.len();
-        visitor.visit_seq(SeqDeserializer { de: self, len })
+        visitor.visit_seq(SeqDeserializer {
+            de: self,
+            len: Some(len),
+        })
     }
 
     fn deserialize_bool<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("bool not supported".to_owned()))
     }
 
     fn deserialize_i8<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i8 not supported".to_owned()))
     }
 
     fn deserialize_i16<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i16 not supported".to_owned()))
     }
 
     fn deserialize_i32<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i32 not supported".to_owned()))
     }
 
     fn deserialize_i64<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i64 not supported".to_owned()))
     }
 
     fn deserialize_u8<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -72,7 +110,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("u16 not supported".to_owned()))
     }
 
     fn deserialize_u32<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -93,21 +131,21 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        todo!()
+        Err(Error::BadMessage("f32 not supported".to_owned()))
     }
 
     fn deserialize_f64<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("f64 not supported".to_owned()))
     }
 
     fn deserialize_char<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("char not supported".to_owned()))
     }
 
     fn deserialize_str<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -142,7 +180,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("option not supported".to_owned()))
     }
 
     fn deserialize_unit<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -178,10 +216,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = self.input.try_get_u32()?;
+        let len = self.input.try_get_u32()? as usize;
         visitor.visit_seq(SeqDeserializer {
             de: self,
-            len: len as usize,
+            len: Some(len),
         })
     }
 
@@ -189,7 +227,10 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer { de: self, len })
+        visitor.visit_seq(SeqDeserializer {
+            de: self,
+            len: Some(len),
+        })
     }
 
     fn deserialize_tuple_struct<V>(
@@ -201,7 +242,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer { de: self, len })
+        self.deserialize_tuple(len, visitor)
     }
 
     fn deserialize_map<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -220,10 +261,7 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_seq(SeqDeserializer {
-            de: self,
-            len: fields.len(),
-        })
+        self.deserialize_tuple(fields.len(), visitor)
     }
 
     fn deserialize_enum<V>(
@@ -242,20 +280,24 @@ impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("identifier not supported".to_owned()))
     }
 
     fn deserialize_ignored_any<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("ignored any not supported".to_owned()))
+    }
+
+    fn is_human_readable(&self) -> bool {
+        false
     }
 }
 
 struct SeqDeserializer<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
-    len: usize,
+    len: Option<usize>,
 }
 
 impl<'a, 'de> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
@@ -265,16 +307,19 @@ impl<'a, 'de> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
     where
         T: serde::de::DeserializeSeed<'de>,
     {
-        if self.len == 0 {
+        if self.len == Some(0) {
             return Ok(None);
         }
 
-        self.len -= 1;
+        if let Some(len) = self.len.as_mut() {
+            *len -= 1;
+        }
+
         seed.deserialize(&mut *self.de).map(Some)
     }
 
     fn size_hint(&self) -> Option<usize> {
-        Some(self.len)
+        self.len
     }
 }
 

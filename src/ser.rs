@@ -10,6 +10,7 @@ pub struct Serializer {
     output: BytesMut,
 }
 
+/// Converting type to bytes according to protocol
 pub fn to_bytes<T>(value: &T) -> Result<Bytes, Error>
 where
     T: serde::Serialize,
@@ -19,6 +20,18 @@ where
     };
     value.serialize(&mut serializer)?;
     Ok(serializer.output.freeze())
+}
+
+/// Serialization of a [`Vec`] without length.
+pub fn data_serialize<S>(data: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut seq = serializer.serialize_seq(None)?;
+    for byte in data {
+        seq.serialize_element(byte)?;
+    }
+    seq.end()
 }
 
 impl<'a> serde::Serializer for &'a mut Serializer {
@@ -33,23 +46,23 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     type SerializeStructVariant = &'a mut Serializer;
 
     fn serialize_bool(self, _v: bool) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("bool not supported".to_owned()))
     }
 
     fn serialize_i8(self, _v: i8) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i8 not supported".to_owned()))
     }
 
     fn serialize_i16(self, _v: i16) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i16 not supported".to_owned()))
     }
 
     fn serialize_i32(self, _v: i32) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i32 not supported".to_owned()))
     }
 
     fn serialize_i64(self, _v: i64) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("i64 not supported".to_owned()))
     }
 
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
@@ -58,7 +71,7 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_u16(self, _v: u16) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("u16 not supported".to_owned()))
     }
 
     fn serialize_u32(self, v: u32) -> Result<Self::Ok, Self::Error> {
@@ -72,15 +85,15 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_f32(self, _v: f32) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("f32 not supported".to_owned()))
     }
 
     fn serialize_f64(self, _v: f64) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("f64 not supported".to_owned()))
     }
 
     fn serialize_char(self, _v: char) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("char not supported".to_owned()))
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
@@ -90,7 +103,7 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_bytes(self, _v: &[u8]) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("bytes not supported".to_owned()))
     }
 
     fn serialize_none(self) -> Result<Self::Ok, Self::Error> {
@@ -105,11 +118,11 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_unit(self) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("unit not supported".to_owned()))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("unit struct not supported".to_owned()))
     }
 
     fn serialize_unit_variant(
@@ -146,7 +159,10 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_seq(self, len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {
-        self.output.put_u32(len.unwrap_or(0) as u32);
+        if let Some(len) = len {
+            self.output.put_u32(len as u32);
+        }
+
         Ok(self)
     }
 
@@ -191,7 +207,11 @@ impl<'a> serde::Serializer for &'a mut Serializer {
         _variant: &'static str,
         _len: usize,
     ) -> Result<Self::SerializeStructVariant, Self::Error> {
-        Err(Error::BadMessage)
+        Err(Error::BadMessage("struct variant not supported".to_owned()))
+    }
+
+    fn is_human_readable(&self) -> bool {
+        false
     }
 }
 

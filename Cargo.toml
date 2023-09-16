@@ -11,14 +11,14 @@ keywords = ["russh", "sftp", "ssh2", "server", "client"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tokio = { version = "1", default-features = false, features = ["io-util", "rt", "sync"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "rt", "sync", "time", "macros"] }
 serde = { version = "1.0", features = ["derive"] }
 bitflags = { version = "2.4", features = ["serde"] }
 
 async-trait = "0.1"
 thiserror = "1.0"
 chrono = "0.4"
-bytes = "1.4"
+bytes = "1.5"
 log = "0.4"
 
 [dev-dependencies]

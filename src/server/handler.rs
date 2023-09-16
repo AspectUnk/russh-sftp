@@ -8,7 +8,7 @@ use crate::protocol::{
 /// Server handler for each client. This is `async_trait`
 #[async_trait]
 pub trait Handler: Sized {
-    /// The type must have an Into<StatusCode>
+    /// The type must have an `Into<StatusCode>`
     /// implementation because a response must be sent
     /// to any request, even if completed by error.
     type Error: Into<StatusCode>;

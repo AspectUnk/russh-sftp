@@ -1,14 +1,26 @@
 use std::{fmt, io};
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+use crate::client;
+
+#[derive(Debug, Clone, Error)]
 pub enum Error {
     #[error("I/O: {0}")]
     IO(String),
     #[error("Unexpected EOF on stream")]
     UnexpectedEof,
-    #[error("Bad message")]
-    BadMessage,
+    #[error("Bad message: {0}")]
+    BadMessage(String),
+    #[error("Client error. ({0})")]
+    Client(String),
+    #[error("Unexpected behavior: {0}")]
+    UnexpectedBehavior(String),
+}
+
+impl From<client::error::Error> for Error {
+    fn from(error: client::error::Error) -> Self {
+        Self::Client(error.to_string())
+    }
 }
 
 impl From<io::Error> for Error {
@@ -24,19 +36,19 @@ impl From<io::Error> for Error {
 }
 
 impl serde::ser::Error for Error {
-    fn custom<T>(_msg: T) -> Self
+    fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
     {
-        Self::BadMessage
+        Self::BadMessage(msg.to_string())
     }
 }
 
 impl serde::de::Error for Error {
-    fn custom<T>(_msg: T) -> Self
+    fn custom<T>(msg: T) -> Self
     where
         T: fmt::Display,
     {
-        Self::BadMessage
+        Self::BadMessage(msg.to_string())
     }
 }

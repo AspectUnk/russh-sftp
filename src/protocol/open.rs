@@ -1,7 +1,7 @@
 use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
 
 /// Opening flags according to the specification
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct OpenFlags(u32);
 
 bitflags! {

@@ -37,7 +37,7 @@ pub use self::{
     data::Data,
     extended::{Extended, ExtendedReply},
     file::File,
-    file_attrs::{FileAttr, FileAttributes, FileType},
+    file_attrs::{FileAttr, FileAttributes, FileMode, FileType},
     fsetstat::FSetStat,
     fstat::Fstat,
     handle::Handle,
@@ -227,7 +227,7 @@ impl TryFrom<&mut Bytes> for Packet {
             SSH_FXP_ATTRS => Self::Attrs(de::from_bytes(bytes)?),
             SSH_FXP_EXTENDED => Self::Extended(de::from_bytes(bytes)?),
             SSH_FXP_EXTENDED_REPLY => Self::ExtendedReply(de::from_bytes(bytes)?),
-            _ => return Err(Error::BadMessage),
+            _ => return Err(Error::BadMessage("unknown type".to_owned())),
         };
 
         Ok(request)
