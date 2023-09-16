@@ -1,6 +1,8 @@
 use std::{fmt, io};
 use thiserror::Error;
 
+use crate::client;
+
 #[derive(Debug, Clone, Error)]
 pub enum Error {
     #[error("I/O: {0}")]
@@ -9,8 +11,16 @@ pub enum Error {
     UnexpectedEof,
     #[error("Bad message: {0}")]
     BadMessage(String),
+    #[error("Client error. ({0})")]
+    Client(String),
     #[error("Unexpected behavior: {0}")]
     UnexpectedBehavior(String),
+}
+
+impl From<client::error::Error> for Error {
+    fn from(error: client::error::Error) -> Self {
+        Self::Client(error.to_string())
+    }
 }
 
 impl From<io::Error> for Error {

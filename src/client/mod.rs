@@ -1,4 +1,4 @@
-mod error;
+pub mod error;
 pub mod fs;
 mod handler;
 mod rawsession;
@@ -16,26 +16,42 @@ use tokio::{
 
 use crate::{error::Error, protocol::Packet, utils::read_packet};
 
+macro_rules! into_wrap {
+    ($handler:expr) => {
+        match $handler.await {
+            Err(error) => Err(error.into()),
+            Ok(()) => Ok(()),
+        }
+    };
+}
+
+async fn execute_handler<H>(bytes: &mut Bytes, handler: &mut H) -> Result<(), error::Error>
+where
+    H: Handler + Send,
+{
+    match Packet::try_from(bytes)? {
+        Packet::Version(p) => into_wrap!(handler.version(p)),
+        Packet::Status(p) => into_wrap!(handler.status(p)),
+        Packet::Handle(p) => into_wrap!(handler.handle(p)),
+        Packet::Data(p) => into_wrap!(handler.data(p)),
+        Packet::Name(p) => into_wrap!(handler.name(p)),
+        Packet::Attrs(p) => into_wrap!(handler.attrs(p)),
+        Packet::ExtendedReply(p) => into_wrap!(handler.extended_reply(p)),
+        _ => {
+            return Err(error::Error::UnexpectedBehavior(
+                "A packet was received that could not be processed.".to_owned(),
+            ))
+        }
+    }
+}
+
 async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
     H: Handler + Send,
 {
     let mut bytes = read_packet(stream).await?;
-
-    // todo: error logging
-    let _ = match Packet::try_from(&mut bytes)? {
-        Packet::Version(p) => handler.version(p).await,
-        Packet::Status(p) => handler.status(p).await,
-        Packet::Handle(p) => handler.handle(p).await,
-        Packet::Data(p) => handler.data(p).await,
-        Packet::Name(p) => handler.name(p).await,
-        Packet::Attrs(p) => handler.attrs(p).await,
-        Packet::ExtendedReply(p) => handler.extended_reply(p).await,
-        _ => Ok(()),
-    };
-
-    Ok(())
+    Ok(execute_handler(&mut bytes, handler).await?)
 }
 
 /// Run processing stream as SFTP client. Is a simple handler of incoming

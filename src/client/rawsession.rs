@@ -268,8 +268,7 @@ impl RawSftpSession {
             )
             .await?;
 
-        if let Packet::Status(status) = &result {
-            println!("status: {} {:?}", self.handles, status);
+        if let Packet::Status(_) = &result {
             self.handles -= 1;
         }
 
@@ -432,7 +431,6 @@ impl RawSftpSession {
             .await?;
 
         if let Packet::Handle(_) = result {
-            println!("open handle");
             self.handles += 1;
         }
 

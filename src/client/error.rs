@@ -4,6 +4,7 @@ use tokio::sync::mpsc::error::SendError as MpscSendError;
 use tokio::sync::oneshot::error::RecvError as OneshotRecvError;
 use tokio::time::error::Elapsed as TimeElapsed;
 
+use crate::error;
 use crate::protocol::Status;
 
 /// Enum for client errors
@@ -18,6 +19,7 @@ pub enum Error {
     /// Time limit for receiving response packet exceeded
     #[error("Timeout")]
     Timeout,
+    /// Occurs due to exceeding the limits set by the `limits@openssh.com` extension
     #[error("Limit exceeded: {0}")]
     Limited(String),
     /// Occurs when an unexpected packet is sent
@@ -58,8 +60,8 @@ impl From<TimeElapsed> for Error {
     }
 }
 
-impl From<crate::error::Error> for Error {
-    fn from(err: crate::error::Error) -> Self {
-        Self::UnexpectedBehavior(err.to_string())
+impl From<error::Error> for Error {
+    fn from(error: error::Error) -> Self {
+        Self::UnexpectedBehavior(error.to_string())
     }
 }

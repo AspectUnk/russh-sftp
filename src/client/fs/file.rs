@@ -21,7 +21,7 @@ use crate::{
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
 
-pub struct FileState {
+pub(crate) struct FileState {
     f_read: StateFn<Option<Vec<u8>>>,
     f_seek: StateFn<u64>,
     f_write: StateFn<usize>,
@@ -65,6 +65,7 @@ impl File {
         }
     }
 
+    /// Queries metadata about the remote file.
     pub async fn metadata(&self) -> SftpResult<Metadata> {
         Ok(self
             .session
@@ -75,6 +76,7 @@ impl File {
             .attrs)
     }
 
+    /// Sets metadata for a remote file.
     pub async fn set_metadata(&self, metadata: Metadata) -> SftpResult<()> {
         self.session
             .lock()
