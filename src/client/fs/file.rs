@@ -14,7 +14,6 @@ use tokio::{
 use super::Metadata;
 use crate::{
     client::{error::Error, rawsession::SftpResult, session::Extensions, RawSftpSession},
-    error,
     extensions::FsyncExtension,
     protocol::{Packet, StatusCode},
 };
@@ -300,7 +299,7 @@ impl AsyncWrite for File {
         if !self.extensions.fsync {
             return Poll::Ready(Ok(()));
         }
-        
+
         let poll = Pin::new(match self.state.f_flush.as_mut() {
             Some(f) => f,
             None => {

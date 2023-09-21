@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 
 use crate::protocol::{
-    Attrs, Data, ExtendedReply, FileAttributes, Handle, Name, OpenFlags, Status, StatusCode,
-    Version,
+    Attrs, Data, FileAttributes, Handle, Name, OpenFlags, Packet, Status, StatusCode, Version,
 };
 
 /// Server handler for each client. This is `async_trait`
@@ -186,6 +185,7 @@ pub trait Handler: Sized {
     }
 
     /// Called on SSH_FXP_EXTENDED.
+    /// The extension can return any packet, so it's not specific.
     /// If the server does not recognize the `request' name
     /// the server must respond with an SSH_FX_OP_UNSUPPORTED error
     #[allow(unused_variables)]
@@ -194,7 +194,7 @@ pub trait Handler: Sized {
         id: u32,
         request: String,
         data: Vec<u8>,
-    ) -> Result<ExtendedReply, Self::Error> {
+    ) -> Result<Packet, Self::Error> {
         Err(self.unimplemented())
     }
 }
