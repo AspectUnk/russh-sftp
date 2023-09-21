@@ -101,24 +101,7 @@ impl File {
             return Ok(());
         }
 
-        let result = self
-            .session
-            .lock()
-            .await
-            .extended(
-                "fsync@openssh.com",
-                FsyncExtension {
-                    handle: self.handle.to_owned(),
-                }
-                .try_into()?,
-            )
-            .await;
-
-        match result {
-            Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
-            Err(error) => Err(error),
-            _ => Err(Error::UnexpectedPacket),
-        }
+        inner_fsync(&self.session, self.handle.as_str()).await
     }
 }
 
@@ -317,7 +300,7 @@ impl AsyncWrite for File {
         if !self.extensions.fsync {
             return Poll::Ready(Ok(()));
         }
-
+        
         let poll = Pin::new(match self.state.f_flush.as_mut() {
             Some(f) => f,
             None => {
@@ -325,28 +308,9 @@ impl AsyncWrite for File {
                 let file_handle = self.handle.to_owned();
 
                 self.state.f_flush.get_or_insert(Box::pin(async move {
-                    let result = session
-                        .lock()
+                    inner_fsync(&session, file_handle)
                         .await
-                        .extended(
-                            "fsync@openssh.com",
-                            FsyncExtension {
-                                handle: file_handle,
-                            }
-                            .try_into()
-                            .map_err(|e: error::Error| {
-                                io::Error::new(io::ErrorKind::Other, e.to_string())
-                            })?,
-                        )
-                        .await;
-
-                    match result {
-                        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => {
-                            Ok(())
-                        }
-                        Err(error) => Err(io::Error::new(io::ErrorKind::Other, error.to_string())),
-                        _ => Err(io::Error::new(io::ErrorKind::Other, "Unexpected packet")),
-                    }
+                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
                 }))
             }
         })
@@ -388,5 +352,28 @@ impl AsyncWrite for File {
         }
 
         poll
+    }
+}
+
+async fn inner_fsync<H: Into<String>>(
+    session: &Arc<Mutex<RawSftpSession>>,
+    handle: H,
+) -> SftpResult<()> {
+    let result = session
+        .lock()
+        .await
+        .extended(
+            "fsync@openssh.com",
+            FsyncExtension {
+                handle: handle.into(),
+            }
+            .try_into()?,
+        )
+        .await;
+
+    match result {
+        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
+        Err(error) => Err(error),
+        _ => Err(Error::UnexpectedPacket),
     }
 }
