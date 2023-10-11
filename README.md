@@ -18,7 +18,7 @@ The main idea of the project is to provide an implementation for interacting wit
 - [x] Client example
 - [x] Server side
 - [x] Simple server example
-- [x] Extension support: `limits@openssh.com`, `fsync@openssh.com`
+- [x] Extension support: `limits@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`
 - [ ] Full server example
 - [ ] Unit tests
 - [ ] Workflow

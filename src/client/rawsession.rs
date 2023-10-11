@@ -8,7 +8,8 @@ use tokio::{
 
 use super::{error::Error, run, Handler};
 use crate::{
-    extensions::LimitsExtension,
+    de,
+    extensions::{self, LimitsExtension, Statvfs},
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
         Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
@@ -594,6 +595,32 @@ impl RawSftpSession {
             .await?;
 
         into_status!(result)
+    }
+
+    pub async fn statvfs<P>(&mut self, path: P) -> SftpResult<Statvfs>
+    where
+        P: Into<String>,
+    {
+        let result = self
+            .extended(
+                extensions::STATVFS,
+                extensions::StatvfsExtension { path: path.into() }.try_into()?,
+            )
+            .await;
+
+        match result {
+            Ok(Packet::ExtendedReply(reply)) => {
+                let ext = de::from_bytes::<Statvfs>(&mut reply.data.into())?;
+
+                Ok(ext)
+            }
+            Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => {
+                Err(Error::UnexpectedPacket)
+            }
+            Ok(Packet::Status(status)) => Err(Error::Status(status)),
+            Err(error) => Err(error),
+            _ => Err(Error::UnexpectedPacket),
+        }
     }
 
     /// Equivalent to `SSH_FXP_EXTENDED`. Allows protocol expansion.

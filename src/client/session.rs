@@ -12,13 +12,14 @@ use super::{
 };
 use crate::{
     de,
-    extensions::LimitsExtension,
+    extensions::{self, LimitsExtension, Statvfs},
     protocol::{FileAttributes, OpenFlags, Packet, StatusCode},
 };
 
 #[derive(Debug, Default)]
 pub(crate) struct Extensions {
     pub fsync: bool,
+    pub statvfs: bool,
     pub limits: Option<Arc<Limits>>,
 }
 
@@ -43,6 +44,10 @@ impl SftpSession {
                 .extensions
                 .get("fsync@openssh.com")
                 .is_some_and(|e| e == "1"),
+            statvfs: version
+                .extensions
+                .get(extensions::STATVFS)
+                .is_some_and(|e| e == "2"),
             limits: None,
         };
 
@@ -258,5 +263,15 @@ impl SftpSession {
 
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lock().await.lstat(path).await?.attrs)
+    }
+
+    /// Performs a statvfs on the remote file system path.
+    /// Returns [`Ok(None)`] if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
+    pub async fn fs_info<P: Into<String>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
+        if !self.extensions.statvfs {
+            return Ok(None);
+        }
+
+        self.session.lock().await.statvfs(path).await.map(Some)
     }
 }
