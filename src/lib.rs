@@ -27,7 +27,7 @@ mod buf;
 /// Client side
 pub mod client;
 pub mod de;
-mod error;
+pub mod error;
 pub mod extensions;
 /// Protocol implementation
 pub mod protocol;
