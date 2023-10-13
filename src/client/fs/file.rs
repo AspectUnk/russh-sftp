@@ -14,8 +14,7 @@ use tokio::{
 use super::Metadata;
 use crate::{
     client::{error::Error, rawsession::SftpResult, session::Extensions, RawSftpSession},
-    extensions::FsyncExtension,
-    protocol::{Packet, StatusCode},
+    protocol::StatusCode,
 };
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
@@ -100,7 +99,12 @@ impl File {
             return Ok(());
         }
 
-        inner_fsync(&self.session, self.handle.as_str()).await
+        self.session
+            .lock()
+            .await
+            .fsync(self.handle.as_str())
+            .await
+            .map(|_| ())
     }
 }
 
@@ -307,8 +311,12 @@ impl AsyncWrite for File {
                 let file_handle = self.handle.to_owned();
 
                 self.state.f_flush.get_or_insert(Box::pin(async move {
-                    inner_fsync(&session, file_handle)
+                    session
+                        .lock()
                         .await
+                        .fsync(file_handle)
+                        .await
+                        .map(|_| ())
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
                 }))
             }
@@ -351,28 +359,5 @@ impl AsyncWrite for File {
         }
 
         poll
-    }
-}
-
-async fn inner_fsync<H: Into<String>>(
-    session: &Arc<Mutex<RawSftpSession>>,
-    handle: H,
-) -> SftpResult<()> {
-    let result = session
-        .lock()
-        .await
-        .extended(
-            "fsync@openssh.com",
-            FsyncExtension {
-                handle: handle.into(),
-            }
-            .try_into()?,
-        )
-        .await;
-
-    match result {
-        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
-        Err(error) => Err(error),
-        _ => Err(Error::UnexpectedPacket),
     }
 }

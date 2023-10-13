@@ -11,9 +11,8 @@ use super::{
     RawSftpSession,
 };
 use crate::{
-    de,
-    extensions::{self, LimitsExtension, Statvfs},
-    protocol::{FileAttributes, OpenFlags, Packet, StatusCode},
+    extensions::{self, Statvfs},
+    protocol::{FileAttributes, OpenFlags, StatusCode},
 };
 
 #[derive(Debug, Default)]
@@ -42,7 +41,7 @@ impl SftpSession {
         let mut extensions = Extensions {
             fsync: version
                 .extensions
-                .get("fsync@openssh.com")
+                .get(extensions::FSYNC)
                 .is_some_and(|e| e == "1"),
             statvfs: version
                 .extensions
@@ -53,20 +52,14 @@ impl SftpSession {
 
         if version
             .extensions
-            .get("limits@openssh.com")
+            .get(extensions::LIMITS)
             .is_some_and(|e| e == "1")
         {
-            let packet = session.extended("limits@openssh.com", vec![]).await?;
-            match packet {
-                Packet::ExtendedReply(reply) => {
-                    let ext = de::from_bytes::<LimitsExtension>(&mut reply.data.into())?;
-                    let limits = Arc::new(Limits::from(ext));
+            let limits = session.limits().await?;
+            let limits = Arc::new(Limits::from(limits));
 
-                    session.set_limits(limits.clone());
-                    extensions.limits = Some(limits);
-                }
-                _ => return Err(Error::UnexpectedPacket),
-            }
+            session.set_limits(limits.clone());
+            extensions.limits = Some(limits);
         }
 
         Ok(Self {

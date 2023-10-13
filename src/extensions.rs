@@ -1,5 +1,9 @@
 use crate::{error::Error, ser};
 
+pub const LIMITS: &str = "limits@openssh.com";
+pub const FSYNC: &str = "fsync@openssh.com";
+pub const STATVFS: &str = "statvfs@openssh.com";
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LimitsExtension {
     pub max_packet_len: u64,
@@ -20,8 +24,6 @@ impl TryInto<Vec<u8>> for FsyncExtension {
         ser::to_bytes(&self).map(|b| b.to_vec())
     }
 }
-
-pub const STATVFS: &str = "statvfs@openssh.com";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatvfsExtension {
