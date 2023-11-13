@@ -80,10 +80,12 @@ impl SftpSession {
     }
 
     /// Opens a file in write-only mode.
+    /// 
+    /// This function will create a file if it does not exist, and will truncate it if it does.
     pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(
             filename,
-            OpenFlags::CREATE | OpenFlags::READ | OpenFlags::WRITE,
+            OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
         )
         .await
     }
