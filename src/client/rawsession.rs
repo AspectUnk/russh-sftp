@@ -211,6 +211,15 @@ impl RawSftpSession {
         id
     }
 
+    /// Closes the inner channel stream. Called by [`Drop`]
+    pub fn close_session(&self) -> SftpResult<()> {
+        if self.tx.is_closed() {
+            return Ok(());
+        }
+
+        Ok(self.tx.send(Bytes::new())?)
+    }
+
     pub async fn init(&self) -> SftpResult<Version> {
         let result = self.send(None, Init::default().into()).await?;
         if let Packet::Version(version) = result {
@@ -661,5 +670,11 @@ impl RawSftpSession {
             }
             _ => Err(Error::UnexpectedPacket),
         }
+    }
+}
+
+impl Drop for RawSftpSession {
+    fn drop(&mut self) {
+        let _ = self.close_session();
     }
 }

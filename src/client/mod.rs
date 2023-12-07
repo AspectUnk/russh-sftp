@@ -71,6 +71,11 @@ where
                     }
                 }
                 Some(data) = rx.recv() => {
+                    if data.is_empty() {
+                        let _ = stream.shutdown().await;
+                        break;
+                    }
+
                     let _  = stream.write_all(&data[..]).await;
                 }
             }

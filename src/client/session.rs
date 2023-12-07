@@ -74,6 +74,10 @@ impl SftpSession {
         self.session.lock().await.set_timeout(secs);
     }
 
+    pub async fn close_session(&self) -> SftpResult<()> {
+        self.session.lock().await.close_session()
+    }
+
     /// Attempts to open a file in read-only mode.
     pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(filename, OpenFlags::READ).await
