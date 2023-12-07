@@ -74,7 +74,8 @@ impl SftpSession {
         self.session.lock().await.set_timeout(secs);
     }
 
-    pub async fn close_session(&self) -> SftpResult<()> {
+    /// Closes the inner channel stream.
+    pub async fn close(&self) -> SftpResult<()> {
         self.session.lock().await.close_session()
     }
 
