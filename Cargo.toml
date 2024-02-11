@@ -22,7 +22,7 @@ bytes = "1.5"
 log = "0.4"
 
 [dev-dependencies]
-russh = "0.40"
-russh-keys = "0.40"
-env_logger = "0.10"
+russh = "0.42"
+russh-keys = "0.42"
+env_logger = "0.11"
 anyhow = "1.0"

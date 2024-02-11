@@ -90,10 +90,10 @@ impl From<FileMode> for FileType {
     fn from(mode: FileMode) -> Self {
         if mode.contains(FileMode::DIR) {
             FileType::Dir
-        } else if mode.contains(FileMode::REG) {
-            FileType::File
         } else if mode.contains(FileMode::LNK) {
             FileType::Symlink
+        } else if mode.contains(FileMode::REG) {
+            FileType::File
         } else {
             FileType::Other
         }
