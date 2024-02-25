@@ -1,8 +1,9 @@
 use bytes::Bytes;
+use flurry::HashMap;
 use std::{num::Wrapping, sync::Arc, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{mpsc, oneshot, Mutex},
+    sync::{mpsc, Mutex},
     time::timeout,
 };
 
@@ -16,9 +17,9 @@ use crate::{
         Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
     },
 };
-
+use tokio::sync::mpsc::Sender;
 pub type SftpResult<T> = Result<T, Error>;
-type SharedData = Mutex<Vec<(Option<u32>, oneshot::Sender<SftpResult<Packet>>)>>;
+type SharedData = HashMap<String, Sender<SftpResult<Packet>>>;
 
 pub(crate) struct SessionInner {
     version: Option<u32>,
@@ -27,25 +28,18 @@ pub(crate) struct SessionInner {
 
 impl SessionInner {
     pub async fn reply(&mut self, id: Option<u32>, packet: Packet) -> SftpResult<()> {
-        let mut requests = self.requests.lock().await;
-
-        if let Some(idx) = requests.iter().position(|&(i, _)| i == id) {
-            let validate = if id.is_some() && self.version.is_none() {
-                Err(Error::UnexpectedPacket)
-            } else if id.is_none() && self.version.is_some() {
-                Err(Error::UnexpectedBehavior("Duplicate version".to_owned()))
-            } else {
-                Ok(())
-            };
-
-            let _ = requests
-                .remove(idx)
-                .1
-                .send(validate.clone().map(|_| packet));
-
+        let validate = if id.is_some() && self.version.is_none() {
+            Err(Error::UnexpectedPacket)
+        } else if id.is_none() && self.version.is_some() {
+            Err(Error::UnexpectedBehavior("Duplicate version".to_owned()))
+        } else {
+            Ok(())
+        };
+        let id = id.unwrap_or_default().to_string();
+        if let Some(sender) = self.requests.pin().remove(&id) {
+            sender.try_send(validate.clone().map(|_| packet)).unwrap();
             return validate;
         }
-
         Err(Error::UnexpectedBehavior(format!(
             "Packet {:?} for unknown recipient",
             id
@@ -58,7 +52,7 @@ impl Handler for SessionInner {
     type Error = Error;
 
     async fn version(&mut self, packet: Version) -> Result<(), Self::Error> {
-        let version = packet.version;
+        let version = packet.version.clone();
         self.reply(None, packet.into()).await?;
         self.version = Some(version);
         Ok(())
@@ -119,6 +113,7 @@ impl From<LimitsExtension> for Limits {
     }
 }
 
+#[derive(Debug, Clone)]
 pub(crate) struct Options {
     timeout: u64,
     limits: Arc<Limits>,
@@ -128,10 +123,11 @@ pub(crate) struct Options {
 /// If the server returns a `Status` packet and it has the code Ok
 /// then the packet is returned as Ok in other error cases
 /// the packet is stored as Err.
+#[derive(Debug, Clone)]
 pub struct RawSftpSession {
     tx: mpsc::UnboundedSender<Bytes>,
     requests: Arc<SharedData>,
-    next_req_id: u32,
+    next_req_id: Arc<Mutex<u32>>,
     handles: Wrapping<u64>,
     options: Options,
 }
@@ -161,16 +157,16 @@ impl RawSftpSession {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let arc = Arc::new(Mutex::new(Vec::new()));
+        let req_map = Arc::new(HashMap::new());
         let inner = SessionInner {
             version: None,
-            requests: arc.clone(),
+            requests: req_map.clone(),
         };
 
         Self {
             tx: run(stream, inner),
-            requests: arc,
-            next_req_id: 0,
+            requests: req_map,
+            next_req_id: Arc::new(Mutex::new(1)),
             handles: Wrapping(0),
             options: Options {
                 timeout: 10,
@@ -191,24 +187,28 @@ impl RawSftpSession {
     }
 
     async fn send(&self, id: Option<u32>, packet: Packet) -> SftpResult<Packet> {
-        let (tx, rx) = oneshot::channel();
-
-        self.requests.lock().await.push((id, tx));
+        let (tx, mut rx) = mpsc::channel(1);
+        let id = id.unwrap_or_default().to_string();
+        self.requests.pin().insert(id.clone(), tx);
         self.tx.send(Bytes::try_from(packet)?)?;
-
-        match timeout(Duration::from_secs(self.options.timeout), rx).await {
-            Ok(result) => result?,
+        match timeout(Duration::from_secs(self.options.timeout), rx.recv()).await {
+            Ok(Some(result)) => result,
+            Ok(None) => {
+                self.requests.pin().remove(&id);
+                Err(Error::UnexpectedBehavior("Recv None Message".into()))
+            }
             Err(error) => {
-                self.requests.lock().await.retain(|&(i, _)| i != id);
+                self.requests.pin().remove(&id);
                 Err(error.into())
             }
         }
     }
 
-    fn use_next_id(&mut self) -> u32 {
-        let id = self.next_req_id;
-        self.next_req_id += 1;
-        id
+    async fn use_next_id(&mut self) -> u32 {
+        let mut id = self.next_req_id.lock().await;
+        let id_value = id.clone();
+        *id += 1;
+        id_value
     }
 
     /// Closes the inner channel stream. Called by [`Drop`]
@@ -244,7 +244,7 @@ impl RawSftpSession {
             return Err(Error::Limited("Handle limit reached".to_owned()));
         }
 
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -266,7 +266,7 @@ impl RawSftpSession {
     }
 
     pub async fn close<H: Into<String>>(&mut self, handle: H) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -295,7 +295,7 @@ impl RawSftpSession {
             return Err(Error::Limited("Write limit reached".to_owned()));
         }
 
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -327,7 +327,7 @@ impl RawSftpSession {
             return Err(Error::Limited("Write limit reached".to_owned()));
         }
 
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -345,7 +345,7 @@ impl RawSftpSession {
     }
 
     pub async fn lstat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -361,7 +361,7 @@ impl RawSftpSession {
     }
 
     pub async fn fstat<H: Into<String>>(&mut self, handle: H) -> SftpResult<Attrs> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -381,7 +381,7 @@ impl RawSftpSession {
         path: P,
         attrs: FileAttributes,
     ) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -402,7 +402,7 @@ impl RawSftpSession {
         handle: H,
         attrs: FileAttributes,
     ) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -428,7 +428,7 @@ impl RawSftpSession {
             return Err(Error::Limited("Handle limit reached".to_owned()));
         }
 
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -448,7 +448,7 @@ impl RawSftpSession {
     }
 
     pub async fn readdir<H: Into<String>>(&mut self, handle: H) -> SftpResult<Name> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -464,7 +464,7 @@ impl RawSftpSession {
     }
 
     pub async fn remove<T: Into<String>>(&mut self, filename: T) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -484,7 +484,7 @@ impl RawSftpSession {
         path: P,
         attrs: FileAttributes,
     ) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -501,7 +501,7 @@ impl RawSftpSession {
     }
 
     pub async fn rmdir<P: Into<String>>(&mut self, path: P) -> SftpResult<Status> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -517,7 +517,7 @@ impl RawSftpSession {
     }
 
     pub async fn realpath<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -533,7 +533,7 @@ impl RawSftpSession {
     }
 
     pub async fn stat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -553,7 +553,7 @@ impl RawSftpSession {
         O: Into<String>,
         N: Into<String>,
     {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -570,7 +570,7 @@ impl RawSftpSession {
     }
 
     pub async fn readlink<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -590,7 +590,7 @@ impl RawSftpSession {
         P: Into<String>,
         T: Into<String>,
     {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         let result = self
             .send(
                 Some(id),
@@ -613,7 +613,7 @@ impl RawSftpSession {
         request: R,
         data: Vec<u8>,
     ) -> SftpResult<Packet> {
-        let id = self.use_next_id();
+        let id = self.use_next_id().await;
         self.send(
             Some(id),
             Extended {
