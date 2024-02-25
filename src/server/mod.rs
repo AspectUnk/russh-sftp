@@ -65,6 +65,7 @@ where
 
     let packet = Bytes::try_from(response)?;
     stream.write_all(&packet).await?;
+    stream.flush().await?;
 
     Ok(())
 }
