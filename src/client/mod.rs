@@ -16,6 +16,8 @@ use tokio::{
 
 use crate::{error::Error, protocol::Packet, utils::read_packet};
 
+pub const CLOSE_SIGNAL: &[u8] = b"CLOSE SESSION";
+
 macro_rules! into_wrap {
     ($handler:expr) => {
         match $handler.await {
@@ -71,7 +73,8 @@ where
                     }
                 }
                 Some(data) = rx.recv() => {
-                    if data.is_empty() {
+                    if data == CLOSE_SIGNAL {
+                        error!("接收消息, 关闭通道");
                         let _ = stream.shutdown().await;
                         break;
                     }
