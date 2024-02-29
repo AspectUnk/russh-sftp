@@ -20,9 +20,13 @@ thiserror = "1.0"
 chrono = "0.4"
 bytes = "1.5"
 log = "0.4"
-
+dashmap = "5.5.3"
 [dev-dependencies]
 russh = "0.42"
 russh-keys = "0.42"
 env_logger = "0.11"
 anyhow = "1.0"
+perfcnt = "0.8.0"
+criterion-perf-events = "0.3.0"
+criterion = {version = "0.4", features = ["async_tokio"] }
+futures = "0.3.29"
