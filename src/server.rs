@@ -54,7 +54,7 @@ where
 async fn process_handler<H, S>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
     H: Handler + Send,
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin + Send,
 {
     let mut bytes = read_packet(stream).await?;
 
@@ -71,17 +71,18 @@ where
 }
 
 /// Run processing stream as SFTP
+// TODO!: Unused async!
 pub async fn run<S, H>(mut stream: S, mut handler: H)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
-    tokio::spawn(async move {
+    let _join_handle = tokio::spawn(async move {
         loop {
             match process_handler(&mut stream, &mut handler).await {
                 Err(Error::UnexpectedEof) => break,
                 Err(err) => warn!("{}", err),
-                Ok(_) => (),
+                Ok(()) => (),
             }
         }
 

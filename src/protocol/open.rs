@@ -6,16 +6,16 @@ pub struct OpenFlags(u32);
 
 bitflags! {
     impl OpenFlags: u32 {
-        const READ = 0x00000001;
-        const WRITE = 0x00000002;
-        const APPEND = 0x00000004;
-        const CREATE = 0x00000008;
-        const TRUNCATE = 0x00000010;
-        const EXCLUDE = 0x00000020;
+        const READ = 0x0000_0001;
+        const WRITE = 0x0000_0002;
+        const APPEND = 0x0000_0004;
+        const CREATE = 0x0000_0008;
+        const TRUNCATE = 0x0000_0010;
+        const EXCLUDE = 0x0000_0020;
     }
 }
 
-/// Implementation for SSH_FXP_OPEN
+/// Implementation for `SSH_FXP_OPEN`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     pub id: u32,

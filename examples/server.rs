@@ -33,9 +33,10 @@ impl Default for SshSession {
 }
 
 impl SshSession {
+    #[allow(clippy::expect_used)]
     pub async fn get_channel(&mut self, channel_id: ChannelId) -> Channel<Msg> {
         let mut clients = self.clients.lock().await;
-        clients.remove(&channel_id).unwrap()
+        clients.remove(&channel_id).expect("channel not found")
     }
 }
 
@@ -64,7 +65,7 @@ impl russh::server::Handler for SshSession {
     ) -> Result<(Self, bool, Session), Self::Error> {
         {
             let mut clients = self.clients.lock().await;
-            clients.insert(channel.id(), channel);
+            _ = clients.insert(channel.id(), channel);
         }
         Ok((self, true, session))
     }
@@ -90,18 +91,10 @@ impl russh::server::Handler for SshSession {
     }
 }
 
+#[derive(Debug, Default)]
 struct SftpSession {
     version: Option<u32>,
     root_dir_read_done: bool,
-}
-
-impl Default for SftpSession {
-    fn default() -> Self {
-        Self {
-            version: None,
-            root_dir_read_done: false,
-        }
-    }
 }
 
 #[async_trait]
@@ -151,12 +144,12 @@ impl russh_sftp::server::Handler for SftpSession {
                 files: vec![
                     File {
                         filename: "foo".to_string(),
-                        longname: "".to_string(),
+                        longname: String::new(),
                         attrs: FileAttributes::default(),
                     },
                     File {
                         filename: "bar".to_string(),
-                        longname: "".to_string(),
+                        longname: String::new(),
                         attrs: FileAttributes::default(),
                     },
                 ],
@@ -171,7 +164,7 @@ impl russh_sftp::server::Handler for SftpSession {
             id,
             files: vec![File {
                 filename: "/".to_string(),
-                longname: "".to_string(),
+                longname: String::new(),
                 attrs: FileAttributes::default(),
             }],
         })
@@ -179,6 +172,7 @@ impl russh_sftp::server::Handler for SftpSession {
 }
 
 #[tokio::main]
+#[allow(clippy::expect_used)]
 async fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Debug)
@@ -187,7 +181,7 @@ async fn main() {
     let config = russh::server::Config {
         auth_rejection_time: Duration::from_secs(3),
         auth_rejection_time_initial: Some(Duration::from_secs(0)),
-        keys: vec![KeyPair::generate_ed25519().unwrap()],
+        keys: vec![KeyPair::generate_ed25519().expect("generate keypair")],
         ..Default::default()
     };
 
@@ -198,12 +192,12 @@ async fn main() {
         (
             "0.0.0.0",
             std::env::var("PORT")
-                .unwrap_or("22".to_string())
+                .unwrap_or_else(|_| "22".to_string())
                 .parse()
-                .unwrap(),
+                .expect("parse port"),
         ),
         server,
     )
     .await
-    .unwrap();
+    .expect("run server");
 }

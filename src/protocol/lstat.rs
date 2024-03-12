@@ -1,6 +1,6 @@
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_LSTAT
+/// Implementation for `SSH_FXP_LSTAT`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Lstat {
     pub id: u32,

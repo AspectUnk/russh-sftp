@@ -1,6 +1,6 @@
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_CLOSE
+/// Implementation for `SSH_FXP_CLOSE`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Close {
     pub id: u32,

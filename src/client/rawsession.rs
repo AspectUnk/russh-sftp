@@ -41,14 +41,13 @@ impl SessionInner {
             let _ = requests
                 .remove(idx)
                 .1
-                .send(validate.clone().map(|_| packet));
+                .send(validate.clone().map(|()| packet));
 
             return validate;
         }
 
         Err(Error::UnexpectedBehavior(format!(
-            "Packet {:?} for unknown recipient",
-            id
+            "Packet {id:?} for unknown recipient"
         )))
     }
 }
@@ -212,6 +211,14 @@ impl RawSftpSession {
     }
 
     /// Closes the inner channel stream. Called by [`Drop`]
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub fn close_session(&self) -> SftpResult<()> {
         if self.tx.is_closed() {
             return Ok(());
@@ -220,6 +227,15 @@ impl RawSftpSession {
         Ok(self.tx.send(Bytes::new())?)
     }
 
+    /// Initialize the session. The server will return the version
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn init(&self) -> SftpResult<Version> {
         let result = self.send(None, Init::default().into()).await?;
         if let Packet::Version(version) = result {
@@ -229,7 +245,16 @@ impl RawSftpSession {
         }
     }
 
-    pub async fn open<T: Into<String>>(
+    /// Open a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn open<T: Into<String> + Send>(
         &mut self,
         filename: T,
         flags: OpenFlags,
@@ -265,7 +290,16 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn close<H: Into<String>>(&mut self, handle: H) -> SftpResult<Status> {
+    /// Close a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn close<H: Into<String> + Send>(&mut self, handle: H) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -285,7 +319,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn read<H: Into<String>>(
+    /// Read from a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn read<H: Into<String> + Send>(
         &mut self,
         handle: H,
         offset: u64,
@@ -312,7 +355,16 @@ impl RawSftpSession {
         into_with_status!(result, Data)
     }
 
-    pub async fn write<H: Into<String>>(
+    /// Write to a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn write<H: Into<String> + Send>(
         &mut self,
         handle: H,
         offset: u64,
@@ -344,7 +396,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn lstat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
+    /// Get `FSTAT` attributes
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn lstat<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -360,7 +421,16 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn fstat<H: Into<String>>(&mut self, handle: H) -> SftpResult<Attrs> {
+    /// Get `LSTAT` attributes
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn fstat<H: Into<String> + Send>(&mut self, handle: H) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -376,7 +446,16 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn setstat<P: Into<String>>(
+    /// TODO
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn setstat<P: Into<String> + Send>(
         &mut self,
         path: P,
         attrs: FileAttributes,
@@ -397,7 +476,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsetstat<H: Into<String>>(
+    /// TODO
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn fsetstat<H: Into<String> + Send>(
         &mut self,
         handle: H,
         attrs: FileAttributes,
@@ -418,7 +506,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn opendir<P: Into<String>>(&mut self, path: P) -> SftpResult<Handle> {
+    /// Open a directory on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn opendir<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Handle> {
         if self
             .options
             .limits
@@ -447,7 +544,16 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn readdir<H: Into<String>>(&mut self, handle: H) -> SftpResult<Name> {
+    /// Read a directory on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn readdir<H: Into<String> + Send>(&mut self, handle: H) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -463,7 +569,16 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn remove<T: Into<String>>(&mut self, filename: T) -> SftpResult<Status> {
+    /// Remove a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn remove<T: Into<String> + Send>(&mut self, filename: T) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -479,7 +594,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn mkdir<P: Into<String>>(
+    /// Create a directory on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn mkdir<P: Into<String> + Send>(
         &mut self,
         path: P,
         attrs: FileAttributes,
@@ -500,7 +624,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn rmdir<P: Into<String>>(&mut self, path: P) -> SftpResult<Status> {
+    /// Remove a directory on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn rmdir<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -516,7 +649,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn realpath<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
+    /// Get the real path of a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn realpath<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -532,7 +674,16 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn stat<P: Into<String>>(&mut self, path: P) -> SftpResult<Attrs> {
+    /// Get the `STAT` attributes
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn stat<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -548,10 +699,19 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
+    /// Rename a file on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn rename<O, N>(&mut self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<String> + Send,
+        N: Into<String> + Send,
     {
         let id = self.use_next_id();
         let result = self
@@ -569,7 +729,16 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn readlink<P: Into<String>>(&mut self, path: P) -> SftpResult<Name> {
+    /// Get the target of a symbolic link on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn readlink<P: Into<String> + Send>(&mut self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -585,10 +754,19 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
+    /// Create a symbolic link on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn symlink<P, T>(&mut self, path: P, target: T) -> SftpResult<Status>
     where
-        P: Into<String>,
-        T: Into<String>,
+        P: Into<String> + Send,
+        T: Into<String> + Send,
     {
         let id = self.use_next_id();
         let result = self
@@ -608,7 +786,15 @@ impl RawSftpSession {
 
     /// Equivalent to `SSH_FXP_EXTENDED`. Allows protocol expansion.
     /// The extension can return any packet, so it's not specific
-    pub async fn extended<R: Into<String>>(
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn extended<R: Into<String> + Send>(
         &mut self,
         request: R,
         data: Vec<u8>,
@@ -626,6 +812,15 @@ impl RawSftpSession {
         .await
     }
 
+    /// Get the limits of the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn limits(&mut self) -> SftpResult<LimitsExtension> {
         match self.extended(extensions::LIMITS, vec![]).await? {
             Packet::ExtendedReply(reply) => {
@@ -638,7 +833,16 @@ impl RawSftpSession {
         }
     }
 
-    pub async fn fsync<H: Into<String>>(&mut self, handle: H) -> SftpResult<Status> {
+    /// Flushes the file system buffers on the server
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn fsync<H: Into<String> + Send>(&mut self, handle: H) -> SftpResult<Status> {
         let result = self
             .extended(
                 extensions::FSYNC,
@@ -652,9 +856,18 @@ impl RawSftpSession {
         into_status!(result)
     }
 
+    /// Get the file system statistics
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn statvfs<P>(&mut self, path: P) -> SftpResult<Statvfs>
     where
-        P: Into<String>,
+        P: Into<String> + Send,
     {
         let result = self
             .extended(

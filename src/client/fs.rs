@@ -1,5 +1,5 @@
 //! Filesystem manipulation operations.
-//! 
+//!
 //! This module contains methods for interacting with remote entities on high-level.
 //! The architecture is quite simple because it is built as an analogue of [`std::fs`]
 

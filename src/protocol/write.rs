@@ -1,6 +1,6 @@
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_WRITE
+/// Implementation for `SSH_FXP_WRITE`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Write {
     pub id: u32,

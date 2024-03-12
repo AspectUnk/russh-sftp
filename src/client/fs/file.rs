@@ -19,9 +19,10 @@ use crate::{
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
 
-const MAX_READ_LENGTH: u64 = 261120;
-const MAX_WRITE_LENGTH: u64 = 261120;
+const MAX_READ_LENGTH: u64 = 261_120;
+const MAX_WRITE_LENGTH: u64 = 261_120;
 
+#[allow(clippy::struct_field_names)]
 struct FileState {
     f_read: StateFn<Option<Vec<u8>>>,
     f_seek: StateFn<u64>,
@@ -70,6 +71,14 @@ impl File {
     }
 
     /// Queries metadata about the remote file.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn metadata(&self) -> SftpResult<Metadata> {
         Ok(self
             .session
@@ -81,6 +90,14 @@ impl File {
     }
 
     /// Sets metadata for a remote file.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn set_metadata(&self, metadata: Metadata) -> SftpResult<()> {
         self.session
             .lock()
@@ -94,6 +111,14 @@ impl File {
     ///
     /// If the server does not support `fsync@openssh.com` sending the request will
     /// be omitted, but will still pseudo-successfully
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn sync_all(&self) -> SftpResult<()> {
         if !self.extensions.fsync {
             return Ok(());
@@ -115,10 +140,10 @@ impl Drop for File {
         }
 
         if let Ok(handle) = Handle::try_current() {
-            let session = self.session.to_owned();
-            let file_handle = self.handle.to_owned();
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
 
-            handle.spawn(async move {
+            let _join_handle = handle.spawn(async move {
                 let _ = session.lock().await.close(file_handle).await;
             });
         }
@@ -131,42 +156,39 @@ impl AsyncRead for File {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
-        let poll = Pin::new(match self.state.f_read.as_mut() {
-            Some(f) => f,
-            None => {
-                let session = self.session.to_owned();
-                let max_read_len = self
-                    .extensions
-                    .limits
-                    .as_ref()
-                    .and_then(|l| l.read_len)
-                    .unwrap_or(MAX_READ_LENGTH) as usize;
+        let poll = Pin::new(if let Some(f) = self.state.f_read.as_mut() {
+            f
+        } else {
+            let session = self.session.clone();
+            let max_read_len = self
+                .extensions
+                .limits
+                .as_ref()
+                .and_then(|l| l.read_len)
+                .unwrap_or(MAX_READ_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
+            let file_handle = self.handle.clone();
 
-                let offset = self.pos;
-                let len = if buf.remaining() > max_read_len {
-                    max_read_len
-                } else {
-                    buf.remaining()
-                };
+            let offset = self.pos;
+            let len = if buf.remaining() > max_read_len {
+                max_read_len
+            } else {
+                buf.remaining()
+            };
 
-                self.state.f_read.get_or_insert(Box::pin(async move {
-                    let result = session
-                        .lock()
-                        .await
-                        .read(file_handle, offset, len as u32)
-                        .await;
+            self.state.f_read.get_or_insert(Box::pin(async move {
+                let result = session
+                    .lock()
+                    .await
+                    .read(file_handle, offset, len as u32)
+                    .await;
 
-                    match result {
-                        Ok(data) => Ok(Some(data.data)),
-                        Err(Error::Status(status)) if status.status_code == StatusCode::Eof => {
-                            Ok(None)
-                        }
-                        Err(e) => Err(io::Error::new(io::ErrorKind::Other, e.to_string())),
-                    }
-                }))
-            }
+                match result {
+                    Ok(data) => Ok(Some(data.data)),
+                    Err(Error::Status(status)) if status.status_code == StatusCode::Eof => Ok(None),
+                    Err(e) => Err(io::Error::new(io::ErrorKind::Other, e.to_string())),
+                }
+            }))
         })
         .poll(cx);
 
@@ -188,19 +210,20 @@ impl AsyncRead for File {
 }
 
 impl AsyncSeek for File {
-    fn start_seek(mut self: Pin<&mut Self>, position: io::SeekFrom) -> io::Result<()> {
-        match self.state.f_seek {
-            Some(_) => Err(io::Error::new(
+    fn start_seek(mut self: Pin<&mut Self>, position: SeekFrom) -> io::Result<()> {
+        if self.state.f_seek.is_some() {
+            Err(io::Error::new(
                 io::ErrorKind::Other,
                 "other file operation is pending, call poll_complete before start_seek",
-            )),
-            None => {
-                let session = self.session.clone();
-                let file_handle = self.handle.to_owned();
-                let cur_pos = self.pos as i64;
+            ))
+        } else {
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
+            let cur_pos = self.pos as i64;
 
-                self.state.f_seek = Some(Box::pin(async move {
-                    let new_pos = match position {
+            self.state.f_seek = Some(Box::pin(async move {
+                let new_pos =
+                    match position {
                         SeekFrom::Start(pos) => pos as i64,
                         SeekFrom::Current(pos) => cur_pos + pos,
                         SeekFrom::End(pos) => {
@@ -221,18 +244,17 @@ impl AsyncSeek for File {
                         }
                     };
 
-                    if new_pos < 0 {
-                        return Err(io::Error::new(
-                            io::ErrorKind::Other,
-                            "cannot move file pointer before the beginning",
-                        ));
-                    }
+                if new_pos < 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Other,
+                        "cannot move file pointer before the beginning",
+                    ));
+                }
 
-                    Ok(new_pos as u64)
-                }));
+                Ok(new_pos as u64)
+            }));
 
-                Ok(())
-            }
+            Ok(())
         }
     }
 
@@ -254,37 +276,36 @@ impl AsyncWrite for File {
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<Result<usize, io::Error>> {
-        let poll = Pin::new(match self.state.f_write.as_mut() {
-            Some(f) => f,
-            None => {
-                let session = self.session.to_owned();
-                let max_write_len = self
-                    .extensions
-                    .limits
-                    .as_ref()
-                    .and_then(|l| l.write_len)
-                    .unwrap_or(MAX_WRITE_LENGTH) as usize;
+        let poll = Pin::new(if let Some(f) = self.state.f_write.as_mut() {
+            f
+        } else {
+            let session = self.session.clone();
+            let max_write_len = self
+                .extensions
+                .limits
+                .as_ref()
+                .and_then(|l| l.write_len)
+                .unwrap_or(MAX_WRITE_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
-                let data = buf.to_vec();
+            let file_handle = self.handle.clone();
+            let data = buf.to_vec();
 
-                let offset = self.pos;
-                let len = if data.len() > max_write_len {
-                    max_write_len
-                } else {
-                    data.len()
-                };
+            let offset = self.pos;
+            let len = if data.len() > max_write_len {
+                max_write_len
+            } else {
+                data.len()
+            };
 
-                self.state.f_write.get_or_insert(Box::pin(async move {
-                    session
-                        .lock()
-                        .await
-                        .write(file_handle, offset, data[..len].to_vec())
-                        .await
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-                    Ok(len)
-                }))
-            }
+            self.state.f_write.get_or_insert(Box::pin(async move {
+                let _status = session
+                    .lock()
+                    .await
+                    .write(file_handle, offset, data[..len].to_vec())
+                    .await
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                Ok(len)
+            }))
         })
         .poll(cx);
 
@@ -304,22 +325,21 @@ impl AsyncWrite for File {
             return Poll::Ready(Ok(()));
         }
 
-        let poll = Pin::new(match self.state.f_flush.as_mut() {
-            Some(f) => f,
-            None => {
-                let session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+        let poll = Pin::new(if let Some(f) = self.state.f_flush.as_mut() {
+            f
+        } else {
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
 
-                self.state.f_flush.get_or_insert(Box::pin(async move {
-                    session
-                        .lock()
-                        .await
-                        .fsync(file_handle)
-                        .await
-                        .map(|_| ())
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
-                }))
-            }
+            self.state.f_flush.get_or_insert(Box::pin(async move {
+                session
+                    .lock()
+                    .await
+                    .fsync(file_handle)
+                    .await
+                    .map(|_| ())
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
+            }))
         })
         .poll(cx);
 
@@ -334,22 +354,21 @@ impl AsyncWrite for File {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        let poll = Pin::new(match self.state.f_shutdown.as_mut() {
-            Some(f) => f,
-            None => {
-                let session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+        let poll = Pin::new(if let Some(f) = self.state.f_shutdown.as_mut() {
+            f
+        } else {
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
 
-                self.state.f_shutdown.get_or_insert(Box::pin(async move {
-                    session
-                        .lock()
-                        .await
-                        .close(file_handle)
-                        .await
-                        .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
-                    Ok(())
-                }))
-            }
+            self.state.f_shutdown.get_or_insert(Box::pin(async move {
+                let _status = session
+                    .lock()
+                    .await
+                    .close(file_handle)
+                    .await
+                    .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                Ok(())
+            }))
         })
         .poll(cx);
 

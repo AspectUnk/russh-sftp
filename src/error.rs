@@ -26,7 +26,7 @@ impl From<client::error::Error> for Error {
 impl From<io::Error> for Error {
     fn from(err: io::Error) -> Self {
         let kind = err.kind();
-        let msg = err.into_inner().map_or("".to_string(), |m| format!("{m}"));
+        let msg = err.into_inner().map_or(String::new(), |m| format!("{m}"));
         match kind {
             io::ErrorKind::UnexpectedEof => Self::UnexpectedEof,
             io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
