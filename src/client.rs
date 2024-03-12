@@ -45,7 +45,7 @@ where
 
 async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + AsyncWrite + Unpin + Send,
     H: Handler + Send,
 {
     let mut bytes = read_packet(stream).await?;
@@ -60,14 +60,14 @@ where
     H: Handler + Send + 'static,
 {
     let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
-    tokio::spawn(async move {
+    let _join_handle = tokio::spawn(async move {
         loop {
             tokio::select! {
                 result = process_handler(&mut stream, &mut handler) => {
                     match result {
                         Err(Error::UnexpectedEof) => break,
                         Err(err) => warn!("{}", err),
-                        Ok(_) => (),
+                        Ok(()) => (),
                     }
                 }
                 Some(data) = rx.recv() => {

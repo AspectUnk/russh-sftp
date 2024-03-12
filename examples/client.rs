@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use log::{error, info, LevelFilter};
-use russh::*;
-use russh_keys::*;
+use russh::{client, ChannelId};
+use russh_keys::key;
 use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
@@ -32,42 +32,74 @@ impl client::Handler for Client {
 }
 
 #[tokio::main]
+#[allow(clippy::expect_used)]
 async fn main() {
     env_logger::builder()
         .filter_level(LevelFilter::Debug)
         .init();
 
     let config = russh::client::Config::default();
+
     let sh = Client {};
+
     let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
         .await
-        .unwrap();
-    if session.authenticate_password("root", "pass").await.unwrap() {
-        let channel = session.channel_open_session().await.unwrap();
-        channel.request_subsystem(true, "sftp").await.unwrap();
-        let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
-        info!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
+        .expect("connection failed");
+
+    if session
+        .authenticate_password("root", "pass")
+        .await
+        .expect("auth failed")
+    {
+        let channel = session
+            .channel_open_session()
+            .await
+            .expect("channel open failed");
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .expect("subsystem failed");
+
+        let sftp = SftpSession::new(channel.into_stream())
+            .await
+            .expect("sftp failed");
+
+        info!(
+            "current path: {:?}",
+            sftp.canonicalize(".").await.expect("canonicalize failed")
+        );
 
         // create dir and symlink
         let path = "./some_kind_of_dir";
         let symlink = "./symlink";
 
-        sftp.create_dir(path).await.unwrap();
-        sftp.symlink(path, symlink).await.unwrap();
+        sftp.create_dir(path).await.expect("create dir failed");
 
-        info!("dir info: {:?}", sftp.metadata(path).await.unwrap());
+        sftp.symlink(path, symlink).await.expect("symlink failed");
+
+        info!(
+            "dir info: {:?}",
+            sftp.metadata(path).await.expect("metadata failed")
+        );
+
         info!(
             "symlink info: {:?}",
-            sftp.symlink_metadata(path).await.unwrap()
+            sftp.symlink_metadata(path)
+                .await
+                .expect("symlink metadata failed")
         );
 
         // scanning directory
-        for entry in sftp.read_dir(".").await.unwrap() {
+        for entry in sftp.read_dir(".").await.expect("read dir failed") {
             info!("file in directory: {:?}", entry.file_name());
         }
 
-        sftp.remove_file(symlink).await.unwrap();
-        sftp.remove_dir(path).await.unwrap();
+        sftp.remove_file(symlink)
+            .await
+            .expect("remove symlink failed");
+
+        sftp.remove_dir(path).await.expect("remove dir failed");
 
         // interaction with i/o
         let filename = "test_new.txt";
@@ -77,11 +109,17 @@ async fn main() {
                 OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE | OpenFlags::READ,
             )
             .await
-            .unwrap();
-        info!("metadata by handle: {:?}", file.metadata().await.unwrap());
+            .expect("open file failed");
 
-        file.write_all(b"magic text").await.unwrap();
+        info!(
+            "metadata by handle: {:?}",
+            file.metadata().await.expect("metadata failed")
+        );
+
+        file.write_all(b"magic text").await.expect("write failed");
+
         info!("flush: {:?}", file.flush().await); // or file.sync_all()
+
         info!(
             "current cursor position: {:?}",
             file.stream_position().await
@@ -89,9 +127,11 @@ async fn main() {
 
         let mut str = String::new();
 
-        file.rewind().await.unwrap();
-        file.read_to_string(&mut str).await.unwrap();
-        file.rewind().await.unwrap();
+        let _res = file.rewind().await.expect("rewind failed");
+
+        let _res = file.read_to_string(&mut str).await.expect("read failed");
+
+        let _res = file.rewind().await.expect("rewind failed");
 
         info!(
             "our magical contents: {}, after rewind: {:?}",
@@ -99,8 +139,10 @@ async fn main() {
             file.stream_position().await
         );
 
-        file.shutdown().await.unwrap();
-        sftp.remove_file(filename).await.unwrap();
+        file.shutdown().await.expect("shutdown failed");
+        sftp.remove_file(filename)
+            .await
+            .expect("remove file failed");
 
         // should fail because handle was closed
         error!("should fail: {:?}", file.read_u8().await);

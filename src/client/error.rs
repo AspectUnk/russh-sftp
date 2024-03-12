@@ -44,13 +44,13 @@ impl From<io::Error> for Error {
 
 impl<T> From<MpscSendError<T>> for Error {
     fn from(err: MpscSendError<T>) -> Self {
-        Self::UnexpectedBehavior(format!("SendError: {}", err))
+        Self::UnexpectedBehavior(format!("SendError: {err}"))
     }
 }
 
 impl From<OneshotRecvError> for Error {
     fn from(err: OneshotRecvError) -> Self {
-        Self::UnexpectedBehavior(format!("RecvError: {}", err))
+        Self::UnexpectedBehavior(format!("RecvError: {err}"))
     }
 }
 

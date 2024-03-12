@@ -15,6 +15,7 @@ use crate::{
     protocol::{FileAttributes, OpenFlags, StatusCode},
 };
 
+///
 #[derive(Debug, Default)]
 pub(crate) struct Extensions {
     pub fsync: bool,
@@ -31,6 +32,14 @@ pub struct SftpSession {
 
 impl SftpSession {
     /// Creates a new session by initializing the protocol and extensions
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn new<S>(stream: S) -> SftpResult<Self>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -75,19 +84,43 @@ impl SftpSession {
     }
 
     /// Closes the inner channel stream.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn close(&self) -> SftpResult<()> {
         self.session.lock().await.close_session()
     }
 
     /// Attempts to open a file in read-only mode.
-    pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn open<T: Into<String> + Send>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(filename, OpenFlags::READ).await
     }
 
     /// Opens a file in write-only mode.
-    /// 
+    ///
     /// This function will create a file if it does not exist, and will truncate it if it does.
-    pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn create<T: Into<String> + Send>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(
             filename,
             OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
@@ -96,7 +129,15 @@ impl SftpSession {
     }
 
     /// Attempts to open or create the file in the specified mode
-    pub async fn open_with_flags<T: Into<String>>(
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn open_with_flags<T: Into<String> + Send>(
         &self,
         filename: T,
         flags: OpenFlags,
@@ -124,16 +165,32 @@ impl SftpSession {
     }
 
     /// Requests the remote party for the absolute from the relative path.
-    pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn canonicalize<T: Into<String> + Send>(&self, path: T) -> SftpResult<String> {
         let name = self.session.lock().await.realpath(path).await?;
-        match name.files.get(0) {
-            Some(file) => Ok(file.filename.to_owned()),
-            None => Err(Error::UnexpectedBehavior("no file".to_owned())),
-        }
+        name.files.first().map_or_else(
+            || Err(Error::UnexpectedBehavior("no file".to_owned())),
+            |file| Ok(file.filename.clone()),
+        )
     }
 
     /// Creates a new empty directory.
-    pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn create_dir<T: Into<String> + Send>(&self, path: T) -> SftpResult<()> {
         self.session
             .lock()
             .await
@@ -143,24 +200,48 @@ impl SftpSession {
     }
 
     /// Reads the contents of a file located at the specified path to the end.
-    pub async fn read<P: Into<String>>(&self, path: P) -> SftpResult<Vec<u8>> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn read<P: Into<String> + Send>(&self, path: P) -> SftpResult<Vec<u8>> {
         let mut file = self.open(path).await?;
         let mut buffer = Vec::new();
 
-        file.read_to_end(&mut buffer).await?;
+        _ = file.read_to_end(&mut buffer).await?;
 
         Ok(buffer)
     }
 
     /// Writes the contents to a file whose path is specified.
-    pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn write<P: Into<String> + Send>(&self, path: P, data: &[u8]) -> SftpResult<()> {
         let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
         file.write_all(data).await?;
         Ok(())
     }
 
     /// Checks a file or folder exists at the specified path
-    pub async fn try_exists<P: Into<String>>(&self, path: P) -> SftpResult<bool> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn try_exists<P: Into<String> + Send>(&self, path: P) -> SftpResult<bool> {
         match self.metadata(path).await {
             Ok(_) => Ok(true),
             Err(Error::Status(status)) if status.status_code == StatusCode::NoSuchFile => Ok(false),
@@ -169,12 +250,24 @@ impl SftpSession {
     }
 
     /// Returns an iterator over the entries within a directory.
-    pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn read_dir<P: Into<String> + Send>(&self, path: P) -> SftpResult<ReadDir> {
         let mut files = vec![];
         let handle = self.session.lock().await.opendir(path).await?.handle;
 
         loop {
-            match self.session.lock().await.readdir(handle.as_str()).await {
+            let raw_sftp_session = &mut self.session.lock().await;
+
+            let read_dir_res = raw_sftp_session.readdir(handle.as_str()).await;
+
+            match read_dir_res {
                 Ok(name) => {
                     files = name
                         .files
@@ -188,7 +281,7 @@ impl SftpSession {
             }
         }
 
-        self.session.lock().await.close(handle).await?;
+        let _status = self.session.lock().await.close(handle).await?;
 
         Ok(ReadDir {
             entries: files.into(),
@@ -196,29 +289,61 @@ impl SftpSession {
     }
 
     /// Reads a symbolic link, returning the file that the link points to.
-    pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn read_link<P: Into<String> + Send>(&self, path: P) -> SftpResult<String> {
         let name = self.session.lock().await.readlink(path).await?;
-        match name.files.get(0) {
-            Some(file) => Ok(file.filename.to_owned()),
-            None => Err(Error::UnexpectedBehavior("no file".to_owned())),
-        }
+        name.files.first().map_or_else(
+            || Err(Error::UnexpectedBehavior("no file".to_owned())),
+            |file| Ok(file.filename.clone()),
+        )
     }
 
     /// Removes the specified folder.
-    pub async fn remove_dir<P: Into<String>>(&self, path: P) -> SftpResult<()> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn remove_dir<P: Into<String> + Send>(&self, path: P) -> SftpResult<()> {
         self.session.lock().await.rmdir(path).await.map(|_| ())
     }
 
     /// Removes the specified file.
-    pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn remove_file<T: Into<String> + Send>(&self, filename: T) -> SftpResult<()> {
         self.session.lock().await.remove(filename).await.map(|_| ())
     }
 
     /// Rename a file or directory to a new name.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<String> + Send,
+        N: Into<String> + Send,
     {
         self.session
             .lock()
@@ -229,10 +354,18 @@ impl SftpSession {
     }
 
     /// Creates a symlink of the specified target.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
     pub async fn symlink<P, T>(&self, path: P, target: T) -> SftpResult<()>
     where
-        P: Into<String>,
-        T: Into<String>,
+        P: Into<String> + Send,
+        T: Into<String> + Send,
     {
         self.session
             .lock()
@@ -243,12 +376,28 @@ impl SftpSession {
     }
 
     /// Queries metadata about the remote file.
-    pub async fn metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn metadata<P: Into<String> + Send>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lock().await.stat(path).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
-    pub async fn set_metadata<P: Into<String>>(
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn set_metadata<P: Into<String> + Send>(
         &self,
         path: P,
         metadata: Metadata,
@@ -261,13 +410,30 @@ impl SftpSession {
             .map(|_| ())
     }
 
-    pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
+    /// Queries metadata about the remote file.
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn symlink_metadata<P: Into<String> + Send>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lock().await.lstat(path).await?.attrs)
     }
 
     /// Performs a statvfs on the remote file system path.
     /// Returns [`Ok(None)`] if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
-    pub async fn fs_info<P: Into<String>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
+    ///
+    /// # Errors
+    ///
+    /// TODO
+    ///
+    /// # Returns
+    ///
+    /// TODO
+    pub async fn fs_info<P: Into<String> + Send>(&self, path: P) -> SftpResult<Option<Statvfs>> {
         if !self.extensions.statvfs {
             return Ok(None);
         }

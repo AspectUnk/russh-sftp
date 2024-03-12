@@ -24,11 +24,11 @@ pub struct FilePermissionFlags(u32);
 
 bitflags! {
     impl FileAttr: u32 {
-        const SIZE = 0x00000001;
-        const UIDGID = 0x00000002;
-        const PERMISSIONS = 0x00000004;
-        const ACMODTIME = 0x00000008;
-        const EXTENDED = 0x80000000;
+        const SIZE = 0x0000_0001;
+        const UIDGID = 0x0000_0002;
+        const PERMISSIONS = 0x0000_0004;
+        const ACMODTIME = 0x0000_0008;
+        const EXTENDED = 0x8000_0000;
     }
 
     impl FileMode: u32 {
@@ -66,22 +66,26 @@ pub enum FileType {
 
 impl FileType {
     /// Returns `true` if the file is a directory
-    pub fn is_dir(&self) -> bool {
+    #[must_use]
+    pub const fn is_dir(&self) -> bool {
         matches!(self, Self::Dir)
     }
 
     /// Returns `true` if the file is a file
-    pub fn is_file(&self) -> bool {
+    #[must_use]
+    pub const fn is_file(&self) -> bool {
         matches!(self, Self::File)
     }
 
     /// Returns `true` if the file is a symlink
-    pub fn is_symlink(&self) -> bool {
+    #[must_use]
+    pub const fn is_symlink(&self) -> bool {
         matches!(self, Self::Symlink)
     }
 
     /// Returns `true` if the file has a distinctive type
-    pub fn is_other(&self) -> bool {
+    #[must_use]
+    pub const fn is_other(&self) -> bool {
         matches!(self, Self::Other)
     }
 }
@@ -89,13 +93,13 @@ impl FileType {
 impl From<FileMode> for FileType {
     fn from(mode: FileMode) -> Self {
         if mode.contains(FileMode::DIR) {
-            FileType::Dir
+            Self::Dir
         } else if mode.contains(FileMode::LNK) {
-            FileType::Symlink
+            Self::Symlink
         } else if mode.contains(FileMode::REG) {
-            FileType::File
+            Self::File
         } else {
-            FileType::Other
+            Self::Other
         }
     }
 }
@@ -107,6 +111,7 @@ impl From<u32> for FileType {
 }
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct FilePermissions {
     pub other_exec: bool,
     pub other_read: bool,
@@ -121,7 +126,7 @@ pub struct FilePermissions {
 
 impl FilePermissions {
     /// Returns `true` if the file is read-only.
-    pub fn is_readonly(&self) -> bool {
+    pub const fn is_readonly(&self) -> bool {
         !(self.owner_read || self.group_read || self.other_read)
     }
 
@@ -187,6 +192,7 @@ macro_rules! impl_fn_type {
     ($get_name:ident, $set_name:ident, $doc_name:expr, $flag:ident) => {
         #[doc = "Returns `true` if is a "]
         #[doc = $doc_name]
+        #[must_use]
         pub fn $get_name(&self) -> bool {
             self.permissions.map_or(false, |b| {
                 FileMode::from_bits_truncate(b).contains(FileMode::$flag)
@@ -226,39 +232,59 @@ impl FileAttributes {
     }
 
     /// Returns the file type
+    #[must_use]
     pub fn file_type(&self) -> FileType {
         FileMode::from_bits_truncate(self.permissions.unwrap_or_default()).into()
     }
 
     /// Returns `true` if is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
 
     /// Returns the size of the file
+    #[must_use]
     pub fn len(&self) -> u64 {
         self.size.unwrap_or(0)
     }
 
     /// Returns the permissions of the file this metadata is for.
+    #[must_use]
     pub fn permissions(&self) -> FilePermissions {
         FilePermissionFlags::from_bits_truncate(self.permissions.unwrap_or_default()).into()
     }
 
     /// Returns the last access time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the time is not set
+    ///
+    /// # Returns
+    ///
+    /// Returns the last access time
     pub fn accessed(&self) -> std::io::Result<SystemTime> {
-        match self.atime {
-            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
-            None => Err(ErrorKind::InvalidData.into()),
-        }
+        self.atime.map_or_else(
+            || Err(ErrorKind::InvalidData.into()),
+            |time| Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+        )
     }
 
     /// Returns the last modification time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the time is not set
+    ///
+    /// # Returns
+    ///
+    /// Returns the last modification time
     pub fn modified(&self) -> std::io::Result<SystemTime> {
-        match self.mtime {
-            Some(time) => Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
-            None => Err(ErrorKind::InvalidData.into()),
-        }
+        self.mtime.map_or_else(
+            || Err(ErrorKind::InvalidData.into()),
+            |time| Ok(UNIX_EPOCH + Duration::from_secs(time as u64)),
+        )
     }
 }
 
@@ -372,7 +398,7 @@ impl<'de> Deserialize<'de> for FileAttributes {
         impl<'de> Visitor<'de> for FileAttributesVisitor {
             type Value = FileAttributes;
 
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("file attributes")
             }
 

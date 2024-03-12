@@ -12,18 +12,21 @@ pub struct DirEntry {
 
 impl DirEntry {
     /// Returns the file name for the file that this entry points at.
+    #[must_use]
     pub fn file_name(&self) -> String {
-        self.file.to_owned()
+        self.file.clone()
     }
 
     /// Returns the file type for the file that this entry points at.
+    #[must_use]
     pub fn file_type(&self) -> FileType {
         self.metadata.file_type()
     }
 
     /// Returns the metadata for the file that this entry points at.
+    #[must_use]
     pub fn metadata(&self) -> Metadata {
-        self.metadata.to_owned()
+        self.metadata.clone()
     }
 }
 

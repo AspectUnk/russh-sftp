@@ -153,6 +153,7 @@ pub enum Packet {
 }
 
 impl Packet {
+    #[must_use]
     pub fn get_request_id(&self) -> u32 {
         match self {
             Self::Open(open) => open.get_request_id(),
@@ -178,8 +179,9 @@ impl Packet {
         }
     }
 
+    #[must_use]
     pub fn status(id: u32, status_code: StatusCode, msg: &str, tag: &str) -> Self {
-        Packet::Status(Status {
+        Self::Status(Status {
             id,
             status_code,
             error_message: msg.to_string(),
@@ -187,6 +189,7 @@ impl Packet {
         })
     }
 
+    #[must_use]
     pub fn error(id: u32, status_code: StatusCode) -> Self {
         Self::status(id, status_code, &status_code.to_string(), "en-US")
     }
@@ -238,7 +241,7 @@ impl TryFrom<Packet> for Bytes {
     type Error = Error;
 
     fn try_from(packet: Packet) -> Result<Self, Self::Error> {
-        let (r#type, payload): (u8, Bytes) = match packet {
+        let (r#type, payload): (u8, Self) = match packet {
             Packet::Init(init) => (SSH_FXP_INIT, ser::to_bytes(&init)?),
             Packet::Version(version) => (SSH_FXP_VERSION, ser::to_bytes(&version)?),
             Packet::Open(open) => (SSH_FXP_OPEN, ser::to_bytes(&open)?),
