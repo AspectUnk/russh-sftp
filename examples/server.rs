@@ -162,7 +162,8 @@ impl russh_sftp::server::Handler for SftpSession {
                 ],
             });
         }
-        Ok(Name { id, files: vec![] })
+        // If all files have been sent to the client, respond with an EOF
+        Err(StatusCode::Eof)
     }
 
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
