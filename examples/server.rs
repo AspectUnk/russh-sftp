@@ -69,6 +69,17 @@ impl russh::server::Handler for SshSession {
         Ok((self, true, session))
     }
 
+    async fn channel_eof(
+        self,
+        channel: ChannelId,
+        mut session: Session,
+    ) -> Result<(Self, Session), Self::Error> {
+        // After a client has sent an EOF, indicating that they don't want
+        // to send more data in this session, the channel can be closed.
+        session.close(channel);
+        Ok((self, session))
+    }
+
     async fn subsystem_request(
         mut self,
         channel_id: ChannelId,
