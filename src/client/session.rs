@@ -85,7 +85,7 @@ impl SftpSession {
     }
 
     /// Opens a file in write-only mode.
-    /// 
+    ///
     /// This function will create a file if it does not exist, and will truncate it if it does.
     pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(
@@ -126,7 +126,7 @@ impl SftpSession {
     /// Requests the remote party for the absolute from the relative path.
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
         let name = self.session.lock().await.realpath(path).await?;
-        match name.files.get(0) {
+        match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
@@ -198,7 +198,7 @@ impl SftpSession {
     /// Reads a symbolic link, returning the file that the link points to.
     pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
         let name = self.session.lock().await.readlink(path).await?;
-        match name.files.get(0) {
+        match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }

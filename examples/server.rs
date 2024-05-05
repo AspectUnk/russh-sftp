@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use log::{error, info, LevelFilter};
 use russh::{
-    server::{Auth, Msg, Session},
+    server::{Auth, Msg, Server as _, Session},
     Channel, ChannelId,
 };
 use russh_keys::key::KeyPair;
@@ -43,49 +43,49 @@ impl SshSession {
 impl russh::server::Handler for SshSession {
     type Error = anyhow::Error;
 
-    async fn auth_password(self, user: &str, password: &str) -> Result<(Self, Auth), Self::Error> {
+    async fn auth_password(&mut self, user: &str, password: &str) -> Result<Auth, Self::Error> {
         info!("credentials: {}, {}", user, password);
-        Ok((self, Auth::Accept))
+        Ok(Auth::Accept)
     }
 
     async fn auth_publickey(
-        self,
+        &mut self,
         user: &str,
         public_key: &russh_keys::key::PublicKey,
-    ) -> Result<(Self, Auth), Self::Error> {
+    ) -> Result<Auth, Self::Error> {
         info!("credentials: {}, {:?}", user, public_key);
-        Ok((self, Auth::Accept))
+        Ok(Auth::Accept)
     }
 
     async fn channel_open_session(
-        mut self,
+        &mut self,
         channel: Channel<Msg>,
-        session: Session,
-    ) -> Result<(Self, bool, Session), Self::Error> {
+        _session: &mut Session,
+    ) -> Result<bool, Self::Error> {
         {
             let mut clients = self.clients.lock().await;
             clients.insert(channel.id(), channel);
         }
-        Ok((self, true, session))
+        Ok(true)
     }
 
     async fn channel_eof(
-        self,
+        &mut self,
         channel: ChannelId,
-        mut session: Session,
-    ) -> Result<(Self, Session), Self::Error> {
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
         // After a client has sent an EOF, indicating that they don't want
         // to send more data in this session, the channel can be closed.
         session.close(channel);
-        Ok((self, session))
+        Ok(())
     }
 
     async fn subsystem_request(
-        mut self,
+        &mut self,
         channel_id: ChannelId,
         name: &str,
-        mut session: Session,
-    ) -> Result<(Self, Session), Self::Error> {
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
         info!("subsystem: {}", name);
 
         if name == "sftp" {
@@ -97,7 +97,7 @@ impl russh::server::Handler for SshSession {
             session.channel_failure(channel_id);
         }
 
-        Ok((self, session))
+        Ok(())
     }
 }
 
@@ -203,19 +203,19 @@ async fn main() {
         ..Default::default()
     };
 
-    let server = Server;
+    let mut server = Server;
 
-    russh::server::run(
-        Arc::new(config),
-        (
-            "0.0.0.0",
-            std::env::var("PORT")
-                .unwrap_or("22".to_string())
-                .parse()
-                .unwrap(),
-        ),
-        server,
-    )
-    .await
-    .unwrap();
+    server
+        .run_on_address(
+            Arc::new(config),
+            (
+                "0.0.0.0",
+                std::env::var("PORT")
+                    .unwrap_or("22".to_string())
+                    .parse()
+                    .unwrap(),
+            ),
+        )
+        .await
+        .unwrap();
 }
