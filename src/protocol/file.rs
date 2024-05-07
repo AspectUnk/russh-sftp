@@ -3,7 +3,7 @@ use std::time::{Duration, UNIX_EPOCH};
 
 use super::FileAttributes;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct File {
     pub filename: String,
     pub longname: String,
