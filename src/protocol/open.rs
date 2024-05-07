@@ -1,4 +1,4 @@
-use std::fs::OpenOptions;
+use std::fs;
 
 use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
 
@@ -17,21 +17,9 @@ bitflags! {
     }
 }
 
-/// Implementation for SSH_FXP_OPEN
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Open {
-    pub id: u32,
-    pub filename: String,
-    pub pflags: OpenFlags,
-    pub attrs: FileAttributes,
-}
-
-impl_request_id!(Open);
-impl_packet_for!(Open);
-
-impl From<OpenFlags> for OpenOptions {
+impl From<OpenFlags> for fs::OpenOptions {
     fn from(value: OpenFlags) -> Self {
-        let mut open_options = OpenOptions::new();
+        let mut open_options = fs::OpenOptions::new();
         if value.contains(OpenFlags::READ) {
             open_options.read(true);
         }
@@ -61,3 +49,15 @@ impl From<OpenFlags> for OpenOptions {
         open_options
     }
 }
+
+/// Implementation for SSH_FXP_OPEN
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Open {
+    pub id: u32,
+    pub filename: String,
+    pub pflags: OpenFlags,
+    pub attrs: FileAttributes,
+}
+
+impl_request_id!(Open);
+impl_packet_for!(Open);
