@@ -38,7 +38,7 @@ struct FileState {
 /// Using [`SeekFrom::End`] is costly and time-consuming because we need to
 /// request the actual file size from the remote server.
 pub struct File {
-    session: RawSftpSession,
+    session: Arc<RawSftpSession>,
     handle: String,
     state: FileState,
     pos: u64,
@@ -48,7 +48,7 @@ pub struct File {
 
 impl File {
     pub(crate) fn new(
-        session: RawSftpSession,
+        session: Arc<RawSftpSession>,
         handle: String,
         extensions: Arc<Extensions>,
     ) -> Self {
@@ -101,8 +101,8 @@ impl Drop for File {
         }
 
         if let Ok(handle) = Handle::try_current() {
-            let mut session = self.session.to_owned();
-            let file_handle = self.handle.to_owned();
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
 
             handle.spawn(async move {
                 let _ = session.close(file_handle).await;
@@ -120,7 +120,7 @@ impl AsyncRead for File {
         let poll = Pin::new(match self.state.f_read.as_mut() {
             Some(f) => f,
             None => {
-                let mut session = self.session.to_owned();
+                let session = self.session.clone();
                 let max_read_len = self
                     .extensions
                     .limits
@@ -128,7 +128,7 @@ impl AsyncRead for File {
                     .and_then(|l| l.read_len)
                     .unwrap_or(MAX_READ_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
+                let file_handle = self.handle.clone();
 
                 let offset = self.pos;
                 let len = if buf.remaining() > max_read_len {
@@ -177,8 +177,8 @@ impl AsyncSeek for File {
                 "other file operation is pending, call poll_complete before start_seek",
             )),
             None => {
-                let mut session = self.session.clone();
-                let file_handle = self.handle.to_owned();
+                let session = self.session.clone();
+                let file_handle = self.handle.clone();
                 let cur_pos = self.pos as i64;
 
                 self.state.f_seek = Some(Box::pin(async move {
@@ -239,7 +239,7 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_write.as_mut() {
             Some(f) => f,
             None => {
-                let mut session = self.session.to_owned();
+                let session = self.session.clone();
                 let max_write_len = self
                     .extensions
                     .limits
@@ -247,7 +247,7 @@ impl AsyncWrite for File {
                     .and_then(|l| l.write_len)
                     .unwrap_or(MAX_WRITE_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
+                let file_handle = self.handle.clone();
                 let data = buf.to_vec();
 
                 let offset = self.pos;
@@ -287,8 +287,8 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_flush.as_mut() {
             Some(f) => f,
             None => {
-                let mut session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+                let session = self.session.clone();
+                let file_handle = self.handle.clone();
 
                 self.state.f_flush.get_or_insert(Box::pin(async move {
                     session
@@ -315,8 +315,8 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_shutdown.as_mut() {
             Some(f) => f,
             None => {
-                let mut session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+                let session = self.session.clone();
+                let file_handle = self.handle.clone();
 
                 self.state.f_shutdown.get_or_insert(Box::pin(async move {
                     session

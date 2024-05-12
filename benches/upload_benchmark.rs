@@ -19,21 +19,21 @@ impl client::Handler for Client {
     type Error = anyhow::Error;
 
     async fn check_server_key(
-        self,
+        &mut self,
         server_public_key: &key::PublicKey,
-    ) -> Result<(Self, bool), Self::Error> {
+    ) -> Result<bool, Self::Error> {
         debug!("check_server_key: {:?}", server_public_key);
-        Ok((self, true))
+        Ok(true)
     }
 
     async fn data(
-        self,
+        &mut self,
         channel: ChannelId,
         data: &[u8],
-        session: client::Session,
-    ) -> Result<(Self, client::Session), Self::Error> {
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
         debug!("data on channel {:?}: {}", channel, data.len());
-        Ok((self, session))
+        Ok(())
     }
 }
 
@@ -74,7 +74,7 @@ async fn upload_file(file_count: i32, file_size: i32) {
         .await
         .unwrap()
     {
-        let mut channel = session.channel_open_session().await.unwrap();
+        let channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
         let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
         test_upload_data(sftp, file_count, file_size).await;

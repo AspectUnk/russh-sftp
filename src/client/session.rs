@@ -22,7 +22,7 @@ pub(crate) struct Extensions {
 /// High-level SFTP implementation for easy interaction with a remote file system.
 /// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
-    session: RawSftpSession,
+    session: Arc<RawSftpSession>,
     extensions: Arc<Extensions>,
 }
 
@@ -60,20 +60,20 @@ impl SftpSession {
         }
 
         Ok(Self {
-            session,
+            session: Arc::new(session),
             extensions: Arc::new(extensions),
         })
     }
 
     /// Set the maximum response time in seconds.
     /// Default: 10 seconds
-    pub async fn set_timeout(&mut self, secs: u64) {
-        self.session.set_timeout(secs);
+    pub async fn set_timeout(&self, secs: u64) {
+        self.session.set_timeout(secs).await;
     }
 
     /// Closes the inner channel stream.
     pub async fn close(&self) -> SftpResult<()> {
-        self.session.lock().await.close_session()
+        self.session.close_session()
     }
 
     /// Attempts to open a file in read-only mode.
