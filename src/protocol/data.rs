@@ -1,6 +1,6 @@
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_DATA
+/// Implementation for `SSH_FXP_DATA`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Data {
     pub id: u32,

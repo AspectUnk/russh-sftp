@@ -106,7 +106,7 @@ impl From<u32> for FileType {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct FilePermissions {
     pub other_exec: bool,
     pub other_read: bool,
@@ -122,10 +122,10 @@ pub struct FilePermissions {
 impl FilePermissions {
     /// Returns `true` if the file is read-only.
     pub fn is_readonly(&self) -> bool {
-        !(self.owner_read || self.group_read || self.other_read)
+        !self.other_write && !self.group_write && !self.owner_write
     }
 
-    /// Clears all flags or sets them to a positive value. Works uniquely for unix.
+    /// Clears all flags or sets them to a positive value. Works for unix.
     pub fn set_readonly(&mut self, readonly: bool) {
         self.other_exec = !readonly;
         self.other_write = !readonly;
@@ -139,6 +139,24 @@ impl FilePermissions {
             self.group_read = true;
             self.owner_read = true;
         }
+    }
+}
+
+impl fmt::Display for FilePermissions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}{}{}{}{}{}{}",
+            if self.owner_read { "r" } else { "-" },
+            if self.owner_write { "w" } else { "-" },
+            if self.owner_exec { "x" } else { "-" },
+            if self.group_read { "r" } else { "-" },
+            if self.group_write { "w" } else { "-" },
+            if self.group_exec { "x" } else { "-" },
+            if self.other_read { "r" } else { "-" },
+            if self.other_write { "w" } else { "-" },
+            if self.other_exec { "x" } else { "-" },
+        )
     }
 }
 
@@ -170,7 +188,7 @@ impl From<u32> for FilePermissions {
 /// The fields `user` and `group` are string names of users and groups for
 /// clients that can be displayed in longname. Can be omitted.
 ///
-/// The `flags` field is omitted because it is set by itself depending on the flags
+/// The `flags` field is omitted because it is set by itself depending on the fields
 #[derive(Debug, Clone)]
 pub struct FileAttributes {
     pub size: Option<u64>,
@@ -278,7 +296,7 @@ impl Default for FileAttributes {
     }
 }
 
-/// For simple conversion of `Metadata` into file attributes
+/// For simple conversion of [`Metadata`] into [`FileAttributes`]
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
         let mut attrs = Self {

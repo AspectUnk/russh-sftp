@@ -50,7 +50,7 @@ impl From<OpenFlags> for fs::OpenOptions {
     }
 }
 
-/// Implementation for SSH_FXP_OPEN
+/// Implementation for `SSH_FXP_OPEN`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     pub id: u32,
