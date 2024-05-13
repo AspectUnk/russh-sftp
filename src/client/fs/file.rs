@@ -69,12 +69,12 @@ impl File {
     }
 
     /// Queries metadata about the remote file.
-    pub async fn metadata(&mut self) -> SftpResult<Metadata> {
+    pub async fn metadata(&self) -> SftpResult<Metadata> {
         Ok(self.session.fstat(self.handle.as_str()).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
-    pub async fn set_metadata(&mut self, metadata: Metadata) -> SftpResult<()> {
+    pub async fn set_metadata(&self, metadata: Metadata) -> SftpResult<()> {
         self.session
             .fsetstat(self.handle.as_str(), metadata)
             .await
@@ -85,7 +85,7 @@ impl File {
     ///
     /// If the server does not support `fsync@openssh.com` sending the request will
     /// be omitted, but will still pseudo-successfully
-    pub async fn sync_all(&mut self) -> SftpResult<()> {
+    pub async fn sync_all(&self) -> SftpResult<()> {
         if !self.extensions.fsync {
             return Ok(());
         }
