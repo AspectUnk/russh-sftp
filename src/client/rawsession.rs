@@ -9,10 +9,7 @@ use std::{
 };
 use tokio::{
     io::{AsyncRead, AsyncWrite},
-    sync::{
-        mpsc::{self, Sender},
-        RwLock,
-    },
+    sync::{mpsc, RwLock},
     time,
 };
 
@@ -28,7 +25,7 @@ use crate::{
 };
 
 pub type SftpResult<T> = Result<T, Error>;
-type SharedRequests = HashMap<Option<u32>, Sender<SftpResult<Packet>>>;
+type SharedRequests = HashMap<Option<u32>, mpsc::Sender<SftpResult<Packet>>>;
 
 pub(crate) struct SessionInner {
     version: Option<u32>,
