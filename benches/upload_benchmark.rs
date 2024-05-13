@@ -37,12 +37,12 @@ impl client::Handler for Client {
     }
 }
 
-async fn test_upload_data(mut sftp: SftpSession, file_count: i32, file_size: i32) {
+async fn test_upload_data(sftp: SftpSession, file_count: i32, file_size: i32) {
     let data_vec: Vec<u8> = vec![0; file_size as usize];
     let mut handler_vec = Vec::new();
     let start_time = Instant::now();
     for i in 0..file_count {
-        let path = format!("data-sync/test_{i}.txt");
+        let path = format!("test_{i}.txt");
         let mut file = sftp.create(path).await.unwrap();
         let data_vec_bk = data_vec.clone();
         let handler = task::spawn(async move {
@@ -58,7 +58,7 @@ async fn test_upload_data(mut sftp: SftpSession, file_count: i32, file_size: i32
     let elapsed_time = start_time.elapsed();
     println!("Time elapsed: {:?}", elapsed_time);
     for i in 0..file_count {
-        let path = format!("data-sync/test_{i}.txt");
+        let path = format!("test_{i}.txt");
         sftp.remove_file(path).await.unwrap();
     }
 }
@@ -70,7 +70,7 @@ async fn upload_file(file_count: i32, file_size: i32) {
         .await
         .unwrap();
     if session
-        .authenticate_password("sftp-user", "password")
+        .authenticate_password("root", "password")
         .await
         .unwrap()
     {

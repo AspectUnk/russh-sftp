@@ -65,7 +65,7 @@ impl Handler for SessionInner {
     type Error = Error;
 
     async fn version(&mut self, packet: Version) -> Result<(), Self::Error> {
-        let version = packet.version.clone();
+        let version = packet.version;
         self.reply(None, packet.into()).await?;
         self.version = Some(version);
         Ok(())
@@ -291,8 +291,8 @@ impl RawSftpSession {
             .await?;
 
         if let Packet::Status(status) = &result {
-            if status.status_code == StatusCode::Ok {
-                if let Err(_) = self
+            if status.status_code == StatusCode::Ok
+                && self
                     .handles
                     .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |h| {
                         if h > 0 {
@@ -301,9 +301,9 @@ impl RawSftpSession {
                             None
                         }
                     })
-                {
-                    warn!("attempt to close more handles than exist")
-                }
+                    .is_err()
+            {
+                warn!("attempt to close more handles than exist");
             }
         }
 
