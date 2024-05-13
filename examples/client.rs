@@ -42,7 +42,11 @@ async fn main() {
     let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
         .await
         .unwrap();
-    if session.authenticate_password("root", "pass").await.unwrap() {
+    if session
+        .authenticate_password("root", "password")
+        .await
+        .unwrap()
+    {
         let channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
         let sftp = SftpSession::new(channel.into_stream()).await.unwrap();

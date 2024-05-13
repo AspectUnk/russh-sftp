@@ -1,8 +1,5 @@
 use std::sync::Arc;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::Mutex,
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{
     error::Error,
@@ -25,7 +22,7 @@ pub(crate) struct Extensions {
 /// High-level SFTP implementation for easy interaction with a remote file system.
 /// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
-    session: Arc<Mutex<RawSftpSession>>,
+    session: Arc<RawSftpSession>,
     extensions: Arc<Extensions>,
 }
 
@@ -63,7 +60,7 @@ impl SftpSession {
         }
 
         Ok(Self {
-            session: Arc::new(Mutex::new(session)),
+            session: Arc::new(session),
             extensions: Arc::new(extensions),
         })
     }
@@ -71,12 +68,12 @@ impl SftpSession {
     /// Set the maximum response time in seconds.
     /// Default: 10 seconds
     pub async fn set_timeout(&self, secs: u64) {
-        self.session.lock().await.set_timeout(secs);
+        self.session.set_timeout(secs).await;
     }
 
     /// Closes the inner channel stream.
     pub async fn close(&self) -> SftpResult<()> {
-        self.session.lock().await.close_session()
+        self.session.close_session()
     }
 
     /// Attempts to open a file in read-only mode.
@@ -103,8 +100,6 @@ impl SftpSession {
     ) -> SftpResult<File> {
         let handle = self
             .session
-            .lock()
-            .await
             .open(
                 filename,
                 flags,
@@ -125,7 +120,7 @@ impl SftpSession {
 
     /// Requests the remote party for the absolute from the relative path.
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
-        let name = self.session.lock().await.realpath(path).await?;
+        let name = self.session.realpath(path).await?;
         match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
@@ -135,8 +130,6 @@ impl SftpSession {
     /// Creates a new empty directory.
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
         self.session
-            .lock()
-            .await
             .mkdir(path, FileAttributes::default())
             .await
             .map(|_| ())
@@ -171,10 +164,10 @@ impl SftpSession {
     /// Returns an iterator over the entries within a directory.
     pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {
         let mut files = vec![];
-        let handle = self.session.lock().await.opendir(path).await?.handle;
+        let handle = self.session.opendir(path).await?.handle;
 
         loop {
-            match self.session.lock().await.readdir(handle.as_str()).await {
+            match self.session.readdir(handle.as_str()).await {
                 Ok(name) => {
                     files = name
                         .files
@@ -188,7 +181,7 @@ impl SftpSession {
             }
         }
 
-        self.session.lock().await.close(handle).await?;
+        self.session.close(handle).await?;
 
         Ok(ReadDir {
             entries: files.into(),
@@ -197,7 +190,7 @@ impl SftpSession {
 
     /// Reads a symbolic link, returning the file that the link points to.
     pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
-        let name = self.session.lock().await.readlink(path).await?;
+        let name = self.session.readlink(path).await?;
         match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
@@ -206,12 +199,12 @@ impl SftpSession {
 
     /// Removes the specified folder.
     pub async fn remove_dir<P: Into<String>>(&self, path: P) -> SftpResult<()> {
-        self.session.lock().await.rmdir(path).await.map(|_| ())
+        self.session.rmdir(path).await.map(|_| ())
     }
 
     /// Removes the specified file.
     pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
-        self.session.lock().await.remove(filename).await.map(|_| ())
+        self.session.remove(filename).await.map(|_| ())
     }
 
     /// Rename a file or directory to a new name.
@@ -220,12 +213,7 @@ impl SftpSession {
         O: Into<String>,
         N: Into<String>,
     {
-        self.session
-            .lock()
-            .await
-            .rename(oldpath, newpath)
-            .await
-            .map(|_| ())
+        self.session.rename(oldpath, newpath).await.map(|_| ())
     }
 
     /// Creates a symlink of the specified target.
@@ -234,17 +222,12 @@ impl SftpSession {
         P: Into<String>,
         T: Into<String>,
     {
-        self.session
-            .lock()
-            .await
-            .symlink(path, target)
-            .await
-            .map(|_| ())
+        self.session.symlink(path, target).await.map(|_| ())
     }
 
     /// Queries metadata about the remote file.
     pub async fn metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.session.lock().await.stat(path).await?.attrs)
+        Ok(self.session.stat(path).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
@@ -253,16 +236,11 @@ impl SftpSession {
         path: P,
         metadata: Metadata,
     ) -> Result<(), Error> {
-        self.session
-            .lock()
-            .await
-            .setstat(path, metadata)
-            .await
-            .map(|_| ())
+        self.session.setstat(path, metadata).await.map(|_| ())
     }
 
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.session.lock().await.lstat(path).await?.attrs)
+        Ok(self.session.lstat(path).await?.attrs)
     }
 
     /// Performs a statvfs on the remote file system path.
@@ -272,6 +250,6 @@ impl SftpSession {
             return Ok(None);
         }
 
-        self.session.lock().await.statvfs(path).await.map(Some)
+        self.session.statvfs(path).await.map(Some)
     }
 }
