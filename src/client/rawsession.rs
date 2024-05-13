@@ -314,7 +314,7 @@ impl RawSftpSession {
         len: u32,
     ) -> SftpResult<Data> {
         if self.options.limits.read_len.is_some_and(|r| len as u64 > r) {
-            return Err(Error::Limited("write limit reached".to_owned()));
+            return Err(Error::Limited("read limit reached".to_owned()));
         }
 
         let id = self.use_next_id();
