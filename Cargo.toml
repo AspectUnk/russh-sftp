@@ -26,7 +26,7 @@ thiserror = "1.0"
 chrono = "0.4"
 bytes = "1.6"
 log = "0.4"
-flurry = "0.4.0"
+flurry = "0.4"
 
 [dev-dependencies]
 russh = "0.43"
