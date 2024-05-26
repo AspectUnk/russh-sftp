@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use criterion::{criterion_group, criterion_main, Criterion};
 use futures;
@@ -7,6 +5,7 @@ use log::debug;
 use russh::{client, ChannelId};
 use russh_keys::key;
 use russh_sftp::client::SftpSession;
+use std::sync::Arc;
 use tokio::{
     io::AsyncWriteExt,
     task::{self},

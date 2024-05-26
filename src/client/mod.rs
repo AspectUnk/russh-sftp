@@ -1,7 +1,7 @@
 pub mod error;
 pub mod fs;
 mod handler;
-mod rawsession;
+pub mod rawsession;
 mod session;
 
 pub use handler::Handler;
