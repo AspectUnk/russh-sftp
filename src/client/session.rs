@@ -14,6 +14,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub(crate) struct Extensions {
+    pub hardlink: bool,
     pub fsync: bool,
     pub statvfs: bool,
     pub limits: Option<Arc<Limits>>,
@@ -36,6 +37,10 @@ impl SftpSession {
         let version = session.init().await?;
 
         let mut extensions = Extensions {
+            hardlink: version
+                .extensions
+                .get(extensions::HARDLINK)
+                .is_some_and(|e| e == "1"),
             fsync: version
                 .extensions
                 .get(extensions::FSYNC)
@@ -241,6 +246,18 @@ impl SftpSession {
 
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lstat(path).await?.attrs)
+    }
+
+    pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        if !self.extensions.hardlink {
+            return Ok(false);
+        }
+
+        self.session.hardlink(oldpath, newpath).await.map(|_| true)
     }
 
     /// Performs a statvfs on the remote file system path.
