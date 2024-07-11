@@ -16,7 +16,9 @@ use tokio::{
 use super::{error::Error, run, Handler};
 use crate::{
     de,
-    extensions::{self, FsyncExtension, LimitsExtension, Statvfs, StatvfsExtension},
+    extensions::{
+        self, FsyncExtension, HardlinkExtension, LimitsExtension, Statvfs, StatvfsExtension,
+    },
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
         Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
@@ -654,6 +656,25 @@ impl RawSftpSession {
             }
             _ => Err(Error::UnexpectedPacket),
         }
+    }
+
+    pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        let result = self
+            .extended(
+                extensions::HARDLINK,
+                HardlinkExtension {
+                    oldpath: oldpath.into(),
+                    newpath: newpath.into(),
+                }
+                .try_into()?,
+            )
+            .await?;
+
+        into_status!(result)
     }
 
     pub async fn fsync<H: Into<String>>(&self, handle: H) -> SftpResult<Status> {
