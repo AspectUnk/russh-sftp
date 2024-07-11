@@ -47,7 +47,8 @@ impl<T: Buf> TryBuf for T {
 
     fn try_get_string(&mut self) -> Result<String, Error> {
         let bytes = self.try_get_bytes()?;
-        String::from_utf8(bytes).map_err(|_| Error::BadMessage("unable to parse str".to_owned()))
+        //String::from_utf8(bytes).map_err(|_| Error::BadMessage("unable to parse str".to_owned()))
+        Ok(String::from_utf8_lossy(&bytes).into())
     }
 }
 
