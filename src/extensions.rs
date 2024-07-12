@@ -1,3 +1,5 @@
+use std::ffi::OsString;
+
 use crate::{error::Error, ser};
 
 pub const LIMITS: &str = "limits@openssh.com";
@@ -27,8 +29,8 @@ pub struct LimitsExtension {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HardlinkExtension {
-    pub oldpath: String,
-    pub newpath: String,
+    pub oldpath: OsString,
+    pub newpath: OsString,
 }
 
 impl_try_into_bytes!(HardlinkExtension);
@@ -42,7 +44,7 @@ impl_try_into_bytes!(FsyncExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatvfsExtension {
-    pub path: String,
+    pub path: OsString,
 }
 
 impl_try_into_bytes!(StatvfsExtension);

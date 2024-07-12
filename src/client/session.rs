@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ffi::OsString, sync::Arc};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{
@@ -250,8 +250,8 @@ impl SftpSession {
 
     pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<OsString>,
+        N: Into<OsString>,
     {
         if !self.extensions.hardlink {
             return Ok(false);
@@ -262,7 +262,7 @@ impl SftpSession {
 
     /// Performs a statvfs on the remote file system path.
     /// Returns [`Ok(None)`] if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
-    pub async fn fs_info<P: Into<String>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
+    pub async fn fs_info<P: Into<OsString>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
         if !self.extensions.statvfs {
             return Ok(None);
         }

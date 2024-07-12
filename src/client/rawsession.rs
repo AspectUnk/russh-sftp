@@ -1,6 +1,7 @@
 use bytes::Bytes;
 use flurry::HashMap;
 use std::{
+    ffi::OsString,
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
@@ -660,8 +661,8 @@ impl RawSftpSession {
 
     pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<OsString>,
+        N: Into<OsString>,
     {
         let result = self
             .extended(
@@ -693,7 +694,7 @@ impl RawSftpSession {
 
     pub async fn statvfs<P>(&self, path: P) -> SftpResult<Statvfs>
     where
-        P: Into<String>,
+        P: Into<OsString>,
     {
         let result = self
             .extended(
