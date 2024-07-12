@@ -1,10 +1,12 @@
+use std::ffi::OsString;
+
 use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
 
 /// Implementation for `SSH_FXP_SETSTAT` and `MKDIR`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SetStat {
     pub id: u32,
-    pub path: String,
+    pub path: OsString,
     pub attrs: FileAttributes,
 }
 

@@ -241,7 +241,7 @@ impl RawSftpSession {
         }
     }
 
-    pub async fn open<T: Into<String>>(
+    pub async fn open<T: Into<OsString>>(
         &self,
         filename: T,
         flags: OpenFlags,
@@ -369,7 +369,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn lstat<P: Into<String>>(&self, path: P) -> SftpResult<Attrs> {
+    pub async fn lstat<P: Into<OsString>>(&self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -401,7 +401,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn setstat<P: Into<String>>(
+    pub async fn setstat<P: Into<OsString>>(
         &self,
         path: P,
         attrs: FileAttributes,
@@ -443,7 +443,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn opendir<P: Into<String>>(&self, path: P) -> SftpResult<Handle> {
+    pub async fn opendir<P: Into<OsString>>(&self, path: P) -> SftpResult<Handle> {
         if self
             .options
             .limits
@@ -488,7 +488,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn remove<T: Into<String>>(&self, filename: T) -> SftpResult<Status> {
+    pub async fn remove<T: Into<OsString>>(&self, filename: T) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -504,7 +504,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn mkdir<P: Into<String>>(
+    pub async fn mkdir<P: Into<OsString>>(
         &self,
         path: P,
         attrs: FileAttributes,
@@ -525,7 +525,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn rmdir<P: Into<String>>(&self, path: P) -> SftpResult<Status> {
+    pub async fn rmdir<P: Into<OsString>>(&self, path: P) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -541,7 +541,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn realpath<P: Into<String>>(&self, path: P) -> SftpResult<Name> {
+    pub async fn realpath<P: Into<OsString>>(&self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -557,7 +557,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn stat<P: Into<String>>(&self, path: P) -> SftpResult<Attrs> {
+    pub async fn stat<P: Into<OsString>>(&self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -575,8 +575,8 @@ impl RawSftpSession {
 
     pub async fn rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<OsString>,
+        N: Into<OsString>,
     {
         let id = self.use_next_id();
         let result = self
@@ -594,7 +594,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn readlink<P: Into<String>>(&self, path: P) -> SftpResult<Name> {
+    pub async fn readlink<P: Into<OsString>>(&self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .send(
@@ -612,8 +612,8 @@ impl RawSftpSession {
 
     pub async fn symlink<P, T>(&self, path: P, target: T) -> SftpResult<Status>
     where
-        P: Into<String>,
-        T: Into<String>,
+        P: Into<OsString>,
+        T: Into<OsString>,
     {
         let id = self.use_next_id();
         let result = self

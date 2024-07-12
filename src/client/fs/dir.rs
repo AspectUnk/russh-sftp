@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, ffi::OsString};
 
 use super::Metadata;
 use crate::protocol::FileType;
@@ -6,13 +6,13 @@ use crate::protocol::FileType;
 /// Entries returned by the [`ReadDir`] iterator.
 #[derive(Debug)]
 pub struct DirEntry {
-    file: String,
+    file: OsString,
     metadata: Metadata,
 }
 
 impl DirEntry {
     /// Returns the file name for the file that this entry points at.
-    pub fn file_name(&self) -> String {
+    pub fn file_name(&self) -> OsString {
         self.file.to_owned()
     }
 
@@ -29,7 +29,7 @@ impl DirEntry {
 
 /// Iterator over the entries in a remote directory.
 pub struct ReadDir {
-    pub(crate) entries: VecDeque<(String, Metadata)>,
+    pub(crate) entries: VecDeque<(OsString, Metadata)>,
 }
 
 impl Iterator for ReadDir {

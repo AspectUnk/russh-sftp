@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ffi::OsString};
 
 use crate::protocol::{
     Attrs, Data, FileAttributes, Handle, Name, OpenFlags, Packet, Status, StatusCode, Version,
@@ -31,7 +31,7 @@ pub trait Handler: Sized {
     async fn open(
         &mut self,
         id: u32,
-        filename: String,
+        filename: OsString,
         pflags: OpenFlags,
         attrs: FileAttributes,
     ) -> Result<Handle, Self::Error> {
@@ -71,7 +71,7 @@ pub trait Handler: Sized {
 
     /// Called on SSH_FXP_LSTAT
     #[allow(unused_variables)]
-    async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+    async fn lstat(&mut self, id: u32, path: OsString) -> Result<Attrs, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -86,7 +86,7 @@ pub trait Handler: Sized {
     async fn setstat(
         &mut self,
         id: u32,
-        path: String,
+        path: OsString,
         attrs: FileAttributes,
     ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
@@ -105,7 +105,7 @@ pub trait Handler: Sized {
 
     /// Called on SSH_FXP_OPENDIR
     #[allow(unused_variables)]
-    async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
+    async fn opendir(&mut self, id: u32, path: OsString) -> Result<Handle, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -119,7 +119,7 @@ pub trait Handler: Sized {
     /// Called on SSH_FXP_REMOVE.
     /// The status can be returned as Ok or as Err
     #[allow(unused_variables)]
-    async fn remove(&mut self, id: u32, filename: String) -> Result<Status, Self::Error> {
+    async fn remove(&mut self, id: u32, filename: OsString) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -128,7 +128,7 @@ pub trait Handler: Sized {
     async fn mkdir(
         &mut self,
         id: u32,
-        path: String,
+        path: OsString,
         attrs: FileAttributes,
     ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
@@ -137,20 +137,20 @@ pub trait Handler: Sized {
     /// Called on SSH_FXP_RMDIR.
     /// The status can be returned as Ok or as Err
     #[allow(unused_variables)]
-    async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, Self::Error> {
+    async fn rmdir(&mut self, id: u32, path: OsString) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 
     /// Called on SSH_FXP_REALPATH.
     /// Must contain only one name and a dummy attributes
     #[allow(unused_variables)]
-    async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
+    async fn realpath(&mut self, id: u32, path: OsString) -> Result<Name, Self::Error> {
         Err(self.unimplemented())
     }
 
     /// Called on SSH_FXP_STAT
     #[allow(unused_variables)]
-    async fn stat(&mut self, id: u32, path: String) -> Result<Attrs, Self::Error> {
+    async fn stat(&mut self, id: u32, path: OsString) -> Result<Attrs, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -160,15 +160,15 @@ pub trait Handler: Sized {
     async fn rename(
         &mut self,
         id: u32,
-        oldpath: String,
-        newpath: String,
+        oldpath: OsString,
+        newpath: OsString,
     ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }
 
     /// Called on SSH_FXP_READLINK
     #[allow(unused_variables)]
-    async fn readlink(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
+    async fn readlink(&mut self, id: u32, path: OsString) -> Result<Name, Self::Error> {
         Err(self.unimplemented())
     }
 
@@ -178,8 +178,8 @@ pub trait Handler: Sized {
     async fn symlink(
         &mut self,
         id: u32,
-        linkpath: String,
-        targetpath: String,
+        linkpath: OsString,
+        targetpath: OsString,
     ) -> Result<Status, Self::Error> {
         Err(self.unimplemented())
     }

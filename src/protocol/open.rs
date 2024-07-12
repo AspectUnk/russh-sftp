@@ -1,4 +1,4 @@
-use std::fs;
+use std::{ffi::OsString, fs};
 
 use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
 
@@ -54,7 +54,7 @@ impl From<OpenFlags> for fs::OpenOptions {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     pub id: u32,
-    pub filename: String,
+    pub filename: OsString,
     pub pflags: OpenFlags,
     pub attrs: FileAttributes,
 }

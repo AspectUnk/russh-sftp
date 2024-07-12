@@ -1,12 +1,15 @@
 use chrono::{DateTime, Utc};
-use std::time::{Duration, UNIX_EPOCH};
+use std::{
+    ffi::OsString,
+    time::{Duration, UNIX_EPOCH},
+};
 
 use super::FileAttributes;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct File {
-    pub filename: String,
-    pub longname: String,
+    pub filename: OsString,
+    pub longname: OsString,
     pub attrs: FileAttributes,
 }
 
@@ -23,7 +26,7 @@ impl File {
         let delayed = datetime.format("%b %d %Y %H:%M");
 
         format!(
-            "{directory}{permissions} 0 {} {} {size} {delayed} {}",
+            "{directory}{permissions} 0 {} {} {size} {delayed} {:?}",
             if let Some(user) = &self.attrs.user {
                 user.to_string()
             } else {

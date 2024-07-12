@@ -82,14 +82,14 @@ impl SftpSession {
     }
 
     /// Attempts to open a file in read-only mode.
-    pub async fn open<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+    pub async fn open<T: Into<OsString>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(filename, OpenFlags::READ).await
     }
 
     /// Opens a file in write-only mode.
     ///
     /// This function will create a file if it does not exist, and will truncate it if it does.
-    pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
+    pub async fn create<T: Into<OsString>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(
             filename,
             OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE,
@@ -98,7 +98,7 @@ impl SftpSession {
     }
 
     /// Attempts to open or create the file in the specified mode
-    pub async fn open_with_flags<T: Into<String>>(
+    pub async fn open_with_flags<T: Into<OsString>>(
         &self,
         filename: T,
         flags: OpenFlags,
@@ -124,7 +124,7 @@ impl SftpSession {
     }
 
     /// Requests the remote party for the absolute from the relative path.
-    pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
+    pub async fn canonicalize<T: Into<OsString>>(&self, path: T) -> SftpResult<OsString> {
         let name = self.session.realpath(path).await?;
         match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
@@ -133,7 +133,7 @@ impl SftpSession {
     }
 
     /// Creates a new empty directory.
-    pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
+    pub async fn create_dir<T: Into<OsString>>(&self, path: T) -> SftpResult<()> {
         self.session
             .mkdir(path, FileAttributes::default())
             .await
@@ -141,7 +141,7 @@ impl SftpSession {
     }
 
     /// Reads the contents of a file located at the specified path to the end.
-    pub async fn read<P: Into<String>>(&self, path: P) -> SftpResult<Vec<u8>> {
+    pub async fn read<P: Into<OsString>>(&self, path: P) -> SftpResult<Vec<u8>> {
         let mut file = self.open(path).await?;
         let mut buffer = Vec::new();
 
@@ -151,14 +151,14 @@ impl SftpSession {
     }
 
     /// Writes the contents to a file whose path is specified.
-    pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
+    pub async fn write<P: Into<OsString>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
         let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
         file.write_all(data).await?;
         Ok(())
     }
 
     /// Checks a file or folder exists at the specified path
-    pub async fn try_exists<P: Into<String>>(&self, path: P) -> SftpResult<bool> {
+    pub async fn try_exists<P: Into<OsString>>(&self, path: P) -> SftpResult<bool> {
         match self.metadata(path).await {
             Ok(_) => Ok(true),
             Err(Error::Status(status)) if status.status_code == StatusCode::NoSuchFile => Ok(false),
@@ -167,7 +167,7 @@ impl SftpSession {
     }
 
     /// Returns an iterator over the entries within a directory.
-    pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {
+    pub async fn read_dir<P: Into<OsString>>(&self, path: P) -> SftpResult<ReadDir> {
         let mut files = vec![];
         let handle = self.session.opendir(path).await?.handle;
 
@@ -194,7 +194,7 @@ impl SftpSession {
     }
 
     /// Reads a symbolic link, returning the file that the link points to.
-    pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
+    pub async fn read_link<P: Into<OsString>>(&self, path: P) -> SftpResult<OsString> {
         let name = self.session.readlink(path).await?;
         match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
@@ -203,20 +203,20 @@ impl SftpSession {
     }
 
     /// Removes the specified folder.
-    pub async fn remove_dir<P: Into<String>>(&self, path: P) -> SftpResult<()> {
+    pub async fn remove_dir<P: Into<OsString>>(&self, path: P) -> SftpResult<()> {
         self.session.rmdir(path).await.map(|_| ())
     }
 
     /// Removes the specified file.
-    pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
+    pub async fn remove_file<T: Into<OsString>>(&self, filename: T) -> SftpResult<()> {
         self.session.remove(filename).await.map(|_| ())
     }
 
     /// Rename a file or directory to a new name.
     pub async fn rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<OsString>,
+        N: Into<OsString>,
     {
         self.session.rename(oldpath, newpath).await.map(|_| ())
     }
@@ -224,19 +224,19 @@ impl SftpSession {
     /// Creates a symlink of the specified target.
     pub async fn symlink<P, T>(&self, path: P, target: T) -> SftpResult<()>
     where
-        P: Into<String>,
-        T: Into<String>,
+        P: Into<OsString>,
+        T: Into<OsString>,
     {
         self.session.symlink(path, target).await.map(|_| ())
     }
 
     /// Queries metadata about the remote file.
-    pub async fn metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
+    pub async fn metadata<P: Into<OsString>>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.stat(path).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
-    pub async fn set_metadata<P: Into<String>>(
+    pub async fn set_metadata<P: Into<OsString>>(
         &self,
         path: P,
         metadata: Metadata,
@@ -244,7 +244,7 @@ impl SftpSession {
         self.session.setstat(path, metadata).await.map(|_| ())
     }
 
-    pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
+    pub async fn symlink_metadata<P: Into<OsString>>(&self, path: P) -> SftpResult<Metadata> {
         Ok(self.session.lstat(path).await?.attrs)
     }
 
