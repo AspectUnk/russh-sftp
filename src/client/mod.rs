@@ -10,7 +10,7 @@ pub use session::SftpSession;
 
 use bytes::Bytes;
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    io::{AsyncRead, AsyncWrite, AsyncWriteExt, split},
     sync::mpsc,
 };
 
@@ -45,7 +45,7 @@ where
 
 async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + Unpin,
     H: Handler + Send,
 {
     let mut bytes = read_packet(stream).await?;
@@ -54,34 +54,41 @@ where
 
 /// Run processing stream as SFTP client. Is a simple handler of incoming
 /// and outgoing packets. Can be used for non-standard implementations
-pub fn run<S, H>(mut stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
+pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
     let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+
+    let (mut rd, mut wr) = split(stream);
+    {
+        tokio::spawn(async move {
+            loop {
+                match process_handler(&mut rd, &mut handler).await {
+                    Err(Error::UnexpectedEof) => break,
+                    Err(err) => warn!("{}", err),
+                    Ok(_) => (),
+                }
+            }
+
+            debug!("read half of sftp stream ended");
+        });
+    }
+
     tokio::spawn(async move {
         loop {
-            tokio::select! {
-                result = process_handler(&mut stream, &mut handler) => {
-                    match result {
-                        Err(Error::UnexpectedEof) => break,
-                        Err(err) => warn!("{}", err),
-                        Ok(_) => (),
-                    }
+            if let Some(data) = rx.recv().await {
+                if data.is_empty() {
+                    let _ = wr.shutdown().await;
+                    break;
                 }
-                Some(data) = rx.recv() => {
-                    if data.is_empty() {
-                        let _ = stream.shutdown().await;
-                        break;
-                    }
 
-                    let _  = stream.write_all(&data[..]).await;
-                }
+                let _  = wr.write_all(&data[..]).await;
             }
         }
 
-        debug!("sftp stream ended");
+        debug!("write half of sftp stream ended");
     });
 
     tx
