@@ -29,7 +29,7 @@ log = "0.4"
 flurry = "0.5"
 
 [dev-dependencies]
-russh = "0.43"
+russh = "0.45"
 russh-keys = "0.45"
 env_logger = "0.11"
 anyhow = "1.0"
