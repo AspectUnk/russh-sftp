@@ -76,8 +76,8 @@ impl SftpSession {
         self.session.set_timeout(secs).await;
     }
 
-    /// Closes the inner channel stream.
-    pub async fn close(&self) -> SftpResult<()> {
+    /// Closes the inner channel stream. Called by [`Drop`]
+    pub fn close(&self) -> SftpResult<()> {
         self.session.close_session()
     }
 
@@ -268,5 +268,11 @@ impl SftpSession {
         }
 
         self.session.statvfs(path).await.map(Some)
+    }
+}
+
+impl Drop for SftpSession {
+    fn drop(&mut self) {
+        let _ = self.close();
     }
 }
