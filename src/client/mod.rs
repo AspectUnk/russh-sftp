@@ -10,9 +10,11 @@ pub use session::SftpSession;
 
 use bytes::Bytes;
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt, split},
+    io::{self, AsyncRead, AsyncWrite, AsyncWriteExt},
+    select,
     sync::mpsc,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{error::Error, protocol::Packet, utils::read_packet};
 
@@ -60,34 +62,46 @@ where
     H: Handler + Send + 'static,
 {
     let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+    let (mut rd, mut wr) = io::split(stream);
 
-    let (mut rd, mut wr) = split(stream);
+    let rc = CancellationToken::new();
+    let wc = rc.clone();
     {
         tokio::spawn(async move {
             loop {
-                match process_handler(&mut rd, &mut handler).await {
-                    Err(Error::UnexpectedEof) => break,
-                    Err(err) => warn!("{}", err),
-                    Ok(_) => (),
+                select! {
+                    result = process_handler(&mut rd, &mut handler) => {
+                        match result {
+                            Err(Error::UnexpectedEof) => break,
+                            Err(err) => warn!("{}", err),
+                            Ok(_) => (),
+                        }
+                    },
+                    _ = rc.cancelled() => break,
                 }
             }
 
+            rc.cancel();
             debug!("read half of sftp stream ended");
         });
     }
 
     tokio::spawn(async move {
         loop {
-            if let Some(data) = rx.recv().await {
-                if data.is_empty() {
-                    let _ = wr.shutdown().await;
-                    break;
-                }
+            select! {
+                Some(data) = rx.recv() => {
+                    if data.is_empty() {
+                        let _ = wr.shutdown().await;
+                        break;
+                    }
 
-                let _  = wr.write_all(&data[..]).await;
+                    let _ = wr.write_all(&data[..]).await;
+                },
+                _ = wc.cancelled() => break,
             }
         }
 
+        wc.cancel();
         debug!("write half of sftp stream ended");
     });
 

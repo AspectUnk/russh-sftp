@@ -18,6 +18,7 @@ tokio = { version = "1", default-features = false, features = [
     "time",
     "macros",
 ] }
+tokio-util = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 bitflags = { version = "2.6", features = ["serde"] }
 
