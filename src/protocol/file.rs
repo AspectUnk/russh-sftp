@@ -11,6 +11,26 @@ pub struct File {
 }
 
 impl File {
+    /// Omits `longname` and `attributes`. This is mainly used for [`crate::server::Handler::realpath`] as per the standard
+    pub fn dummy<S: Into<String>>(filename: S) -> Self {
+        Self {
+            filename: filename.into(),
+            longname: "".to_string(),
+            attrs: FileAttributes::default(),
+        }
+    }
+
+    /// Implies the use of longname
+    pub fn new<S: Into<String>>(filename: S, attrs: FileAttributes) -> Self {
+        let mut file = Self {
+            filename: filename.into(),
+            longname: "".to_string(),
+            attrs,
+        };
+        file.longname = file.longname();
+        file
+    }
+
     /// Get formed longname
     pub fn longname(&self) -> String {
         let directory = if self.attrs.is_dir() { "d" } else { "-" };

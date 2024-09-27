@@ -160,16 +160,8 @@ impl russh_sftp::server::Handler for SftpSession {
             return Ok(Name {
                 id,
                 files: vec![
-                    File {
-                        filename: "foo".to_string(),
-                        longname: "".to_string(),
-                        attrs: FileAttributes::default(),
-                    },
-                    File {
-                        filename: "bar".to_string(),
-                        longname: "".to_string(),
-                        attrs: FileAttributes::default(),
-                    },
+                    File::new("foo", FileAttributes::default()),
+                    File::new("bar", FileAttributes::default()),
                 ],
             });
         }
@@ -181,11 +173,7 @@ impl russh_sftp::server::Handler for SftpSession {
         info!("realpath: {}", path);
         Ok(Name {
             id,
-            files: vec![File {
-                filename: "/".to_string(),
-                longname: "".to_string(),
-                attrs: FileAttributes::default(),
-            }],
+            files: vec![File::dummy("/")],
         })
     }
 }
