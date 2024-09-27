@@ -101,18 +101,10 @@ impl russh::server::Handler for SshSession {
     }
 }
 
+#[derive(Default)]
 struct SftpSession {
     version: Option<u32>,
     root_dir_read_done: bool,
-}
-
-impl Default for SftpSession {
-    fn default() -> Self {
-        Self {
-            version: None,
-            root_dir_read_done: false,
-        }
-    }
 }
 
 #[async_trait]
