@@ -10,9 +10,11 @@ pub use session::SftpSession;
 
 use bytes::Bytes;
 use tokio::{
-    io::{AsyncRead, AsyncWrite, AsyncWriteExt},
+    io::{self, AsyncRead, AsyncWrite, AsyncWriteExt},
+    select,
     sync::mpsc,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::{error::Error, protocol::Packet, utils::read_packet};
 
@@ -45,7 +47,7 @@ where
 
 async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
 where
-    S: AsyncRead + AsyncWrite + Unpin,
+    S: AsyncRead + Unpin,
     H: Handler + Send,
 {
     let mut bytes = read_packet(stream).await?;
@@ -54,34 +56,53 @@ where
 
 /// Run processing stream as SFTP client. Is a simple handler of incoming
 /// and outgoing packets. Can be used for non-standard implementations
-pub fn run<S, H>(mut stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
+pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
     let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+    let (mut rd, mut wr) = io::split(stream);
+
+    let rc = CancellationToken::new();
+    let wc = rc.clone();
+    {
+        tokio::spawn(async move {
+            loop {
+                select! {
+                    result = process_handler(&mut rd, &mut handler) => {
+                        match result {
+                            Err(Error::UnexpectedEof) => break,
+                            Err(err) => warn!("{}", err),
+                            Ok(_) => (),
+                        }
+                    },
+                    _ = rc.cancelled() => break,
+                }
+            }
+
+            rc.cancel();
+            debug!("read half of sftp stream ended");
+        });
+    }
+
     tokio::spawn(async move {
         loop {
-            tokio::select! {
-                result = process_handler(&mut stream, &mut handler) => {
-                    match result {
-                        Err(Error::UnexpectedEof) => break,
-                        Err(err) => warn!("{}", err),
-                        Ok(_) => (),
-                    }
-                }
+            select! {
                 Some(data) = rx.recv() => {
                     if data.is_empty() {
-                        let _ = stream.shutdown().await;
+                        let _ = wr.shutdown().await;
                         break;
                     }
 
-                    let _  = stream.write_all(&data[..]).await;
-                }
+                    let _ = wr.write_all(&data[..]).await;
+                },
+                _ = wc.cancelled() => break,
             }
         }
 
-        debug!("sftp stream ended");
+        wc.cancel();
+        debug!("write half of sftp stream ended");
     });
 
     tx
