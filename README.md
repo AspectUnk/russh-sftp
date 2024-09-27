@@ -10,10 +10,6 @@ The main idea of the project is to provide an implementation for interacting wit
 - [Client example](https://github.com/AspectUnk/russh-sftp/blob/master/examples/client.rs)
 - [Simple server](https://github.com/AspectUnk/russh-sftp/blob/master/examples/server.rs)
 
-## Adopters
-
-- [kty](https://github.com/grampelberg/kty) - The terminal for Kubernetes.
-
 ## What's ready?
 - [x] Basic packets
 - [x] Extended packets
@@ -26,6 +22,10 @@ The main idea of the project is to provide an implementation for interacting wit
 - [ ] Full server example
 - [ ] Unit tests
 - [ ] Workflow
+
+## Adopters
+
+- [kty](https://github.com/grampelberg/kty) - The terminal for Kubernetes.
 
 ## Some words
 Thanks to [@Eugeny](https://github.com/Eugeny) (author of the [Russh](https://github.com/warp-tech/russh)) for his prompt help and finalization of Russh API
