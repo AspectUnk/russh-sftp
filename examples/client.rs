@@ -1,3 +1,4 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use log::{error, info, LevelFilter};
 use russh::*;
@@ -31,47 +32,38 @@ impl client::Handler for Client {
     }
 }
 
-#[tokio::main]
-async fn main() {
-    env_logger::builder()
-        .filter_level(LevelFilter::Debug)
-        .init();
-
-    let config = russh::client::Config::default();
-    let sh = Client {};
-    let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
-        .await
-        .unwrap();
+async fn sftp_client(sh: &Client, config: Arc<Config>) -> Result<()> {
+    let mut session = russh::client::connect(config, ("localhost", 22), sh)
+        .await?;
     if session
         .authenticate_password("root", "password")
-        .await
-        .unwrap()
+        .await?
     {
-        let channel = session.channel_open_session().await.unwrap();
-        channel.request_subsystem(true, "sftp").await.unwrap();
-        let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
-        info!("current path: {:?}", sftp.canonicalize(".").await.unwrap());
+        let channel = session.channel_open_session().await?;
+        channel.request_subsystem(true, "sftp").await?;
+        let sftp = SftpSession::new(channel.into_stream()).await?;
+        info!("current path: {:?}", sftp.canonicalize(".").await?);
 
         // create dir and symlink
         let path = "./some_kind_of_dir";
         let symlink = "./symlink";
 
-        sftp.create_dir(path).await.unwrap();
-        sftp.symlink(path, symlink).await.unwrap();
+        sftp.create_dir(path).await?;
+        sftp.symlink(path, symlink).await?;
 
-        info!("dir info: {:?}", sftp.metadata(path).await.unwrap());
+        info!("dir info: {:?}", sftp.metadata(path).await?);
         info!(
             "symlink info: {:?}",
-            sftp.symlink_metadata(path).await.unwrap()
+            sftp.symlink_metadata(path).await?
         );
 
         // scanning directory
-        for entry in sftp.read_dir(".").await.unwrap() {
+        for entry in sftp.read_dir(".").await? {
             info!("file in directory: {:?}", entry.file_name());
         }
 
-        sftp.remove_file(symlink).await.unwrap();
-        sftp.remove_dir(path).await.unwrap();
+        sftp.remove_file(symlink).await?;
+        sftp.remove_dir(path).await?;
 
         // interaction with i/o
         let filename = "test_new.txt";
@@ -80,11 +72,10 @@ async fn main() {
                 filename,
                 OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE | OpenFlags::READ,
             )
-            .await
-            .unwrap();
-        info!("metadata by handle: {:?}", file.metadata().await.unwrap());
+            .await?;
+        info!("metadata by handle: {:?}", file.metadata().await?);
 
-        file.write_all(b"magic text").await.unwrap();
+        file.write_all(b"magic text").await?;
         info!("flush: {:?}", file.flush().await); // or file.sync_all()
         info!(
             "current cursor position: {:?}",
@@ -93,9 +84,9 @@ async fn main() {
 
         let mut str = String::new();
 
-        file.rewind().await.unwrap();
-        file.read_to_string(&mut str).await.unwrap();
-        file.rewind().await.unwrap();
+        file.rewind().await?;
+        file.read_to_string(&mut str).await?;
+        file.rewind().await?;
 
         info!(
             "our magical contents: {}, after rewind: {:?}",
@@ -103,10 +94,25 @@ async fn main() {
             file.stream_position().await
         );
 
-        file.shutdown().await.unwrap();
-        sftp.remove_file(filename).await.unwrap();
+        file.shutdown().await?;
+        sftp.remove_file(filename).await?;
 
         // should fail because handle was closed
         error!("should fail: {:?}", file.read_u8().await);
+        Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    env_logger::builder()
+        .filter_level(LevelFilter::Debug)
+        .init();
+
+    let config = russh::client::Config::default();
+    let sh = Client {};
+
+    if let Err(e) = sftp_client(&sh, Arc::new(config)) {
+        error!("SFTP client failed: {}", e)
     }
 }
