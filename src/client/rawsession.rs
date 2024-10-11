@@ -198,6 +198,10 @@ impl RawSftpSession {
     }
 
     async fn send(&self, id: Option<u32>, packet: Packet) -> SftpResult<Packet> {
+        if self.tx.is_closed() {
+            return Err(Error::UnexpectedBehavior("session closed".into()));
+        }
+
         let (tx, mut rx) = mpsc::channel(1);
 
         self.requests.pin().insert(id, tx);
