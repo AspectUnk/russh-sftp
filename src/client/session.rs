@@ -33,9 +33,22 @@ impl SftpSession {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let mut session = RawSftpSession::new(stream);
-        let version = session.init().await?;
+        Self::new_opts(stream, None).await
+    }
 
+    /// Creates a new session with timeout opt before the first request
+    pub async fn new_opts<S>(stream: S, timeout: Option<u64>) -> SftpResult<Self>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let mut session = RawSftpSession::new(stream);
+
+        // todo: for new options we need builder
+        if let Some(timeout) = timeout {
+            session.set_timeout(timeout).await;
+        }
+
+        let version = session.init().await?;
         let mut extensions = Extensions {
             hardlink: version
                 .extensions
