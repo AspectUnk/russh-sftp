@@ -11,7 +11,7 @@ pub struct File {
 }
 
 impl File {
-    /// Omits `longname` and `attributes`. This is mainly used for [`crate::server::Handler::realpath`] as per the standard
+    /// Omits `longname` and set dummy `attributes`. This is mainly used for [`crate::server::Handler::realpath`] as per the standard
     pub fn dummy<S: Into<String>>(filename: S) -> Self {
         Self {
             filename: filename.into(),

@@ -118,14 +118,7 @@ impl SftpSession {
     ) -> SftpResult<File> {
         let handle = self
             .session
-            .open(
-                filename,
-                flags,
-                FileAttributes {
-                    permissions: Some(0o755 | flags.bits()),
-                    ..Default::default()
-                },
-            )
+            .open(filename, flags, FileAttributes::empty())
             .await?
             .handle;
 
@@ -148,7 +141,7 @@ impl SftpSession {
     /// Creates a new empty directory.
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
         self.session
-            .mkdir(path, FileAttributes::default())
+            .mkdir(path, FileAttributes::empty())
             .await
             .map(|_| ())
     }

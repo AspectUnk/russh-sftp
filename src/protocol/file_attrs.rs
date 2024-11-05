@@ -278,6 +278,20 @@ impl FileAttributes {
             None => Err(ErrorKind::InvalidData.into()),
         }
     }
+
+    /// Creates a structure with omitted attributes
+    pub fn empty() -> Self {
+        Self {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
+            permissions: None,
+            atime: None,
+            mtime: None,
+        }
+    }
 }
 
 /// For packets which require dummy attributes
