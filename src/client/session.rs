@@ -128,7 +128,6 @@ impl SftpSession {
         attributes: FileAttributes,
     ) -> SftpResult<File> {
         let handle = self.session.open(filename, flags, attributes).await?.handle;
-
         Ok(File::new(
             self.session.clone(),
             handle,
