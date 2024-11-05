@@ -116,11 +116,18 @@ impl SftpSession {
         filename: T,
         flags: OpenFlags,
     ) -> SftpResult<File> {
-        let handle = self
-            .session
-            .open(filename, flags, FileAttributes::empty())
-            .await?
-            .handle;
+        self.open_with_flags_and_attributes(filename, flags, FileAttributes::empty())
+            .await
+    }
+
+    /// Attempts to open or create the file in the specified mode and with specified file attributes
+    pub async fn open_with_flags_and_attributes<T: Into<String>>(
+        &self,
+        filename: T,
+        flags: OpenFlags,
+        attributes: FileAttributes,
+    ) -> SftpResult<File> {
+        let handle = self.session.open(filename, flags, attributes).await?.handle;
 
         Ok(File::new(
             self.session.clone(),
