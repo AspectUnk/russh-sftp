@@ -1,12 +1,14 @@
 use async_trait::async_trait;
 use log::{error, info, LevelFilter};
-use russh::{
-    server::{Auth, Msg, Server as _, Session},
-    Channel, ChannelId,
-};
-use russh_keys::key::KeyPair;
+use russh::server::{Auth, Msg, Server as _, Session};
+use russh::{Channel, ChannelId};
+use russh_keys::ssh_key;
+use russh_keys::ssh_key::rand_core::OsRng;
 use russh_sftp::protocol::{File, FileAttributes, Handle, Name, Status, StatusCode, Version};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 
 #[derive(Clone)]
@@ -51,7 +53,7 @@ impl russh::server::Handler for SshSession {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        public_key: &russh_keys::key::PublicKey,
+        public_key: &russh_keys::ssh_key::PublicKey,
     ) -> Result<Auth, Self::Error> {
         info!("credentials: {}, {:?}", user, public_key);
         Ok(Auth::Accept)
@@ -76,7 +78,7 @@ impl russh::server::Handler for SshSession {
     ) -> Result<(), Self::Error> {
         // After a client has sent an EOF, indicating that they don't want
         // to send more data in this session, the channel can be closed.
-        session.close(channel);
+        session.close(channel)?;
         Ok(())
     }
 
@@ -91,10 +93,10 @@ impl russh::server::Handler for SshSession {
         if name == "sftp" {
             let channel = self.get_channel(channel_id).await;
             let sftp = SftpSession::default();
-            session.channel_success(channel_id);
+            session.channel_success(channel_id)?;
             russh_sftp::server::run(channel.into_stream(), sftp).await;
         } else {
-            session.channel_failure(channel_id);
+            session.channel_failure(channel_id)?;
         }
 
         Ok(())
@@ -179,7 +181,9 @@ async fn main() {
     let config = russh::server::Config {
         auth_rejection_time: Duration::from_secs(3),
         auth_rejection_time_initial: Some(Duration::from_secs(0)),
-        keys: vec![KeyPair::generate_ed25519()],
+        keys: vec![
+            russh_keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap(),
+        ],
         ..Default::default()
     };
 

@@ -23,15 +23,15 @@ serde = { version = "1.0", features = ["derive"] }
 bitflags = { version = "2.6", features = ["serde"] }
 
 async-trait = "0.1"
-thiserror = "1.0"
+thiserror = "2.0"
 chrono = "0.4"
-bytes = "1.8"
+bytes = "1.9"
 log = "0.4"
 flurry = "0.5"
 
 [dev-dependencies]
-russh = "0.46"
-russh-keys = "0.46"
+russh = "0.49"
+russh-keys = "0.49"
 env_logger = "0.11"
 anyhow = "1.0"
 criterion = { version = "0.5", features = ["async_tokio"] }
