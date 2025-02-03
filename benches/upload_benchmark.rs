@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use criterion::{criterion_group, criterion_main, Criterion};
-use futures;
 use log::debug;
 use russh::{client, ChannelId};
 use russh_keys::ssh_key;

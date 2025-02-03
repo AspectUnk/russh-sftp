@@ -27,9 +27,9 @@ mod symlink;
 mod version;
 mod write;
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, Bytes, BytesMut};
 
-use crate::{de, error::Error, ser};
+use crate::{buf::TryBuf, de, error::Error, ser};
 
 pub use self::{
     attrs::Attrs,

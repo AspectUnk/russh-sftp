@@ -1,4 +1,3 @@
-use bytes::TryGetError;
 use std::{fmt, io};
 use thiserror::Error;
 
@@ -33,15 +32,6 @@ impl From<io::Error> for Error {
             io::ErrorKind::Other if msg == "EOF" => Self::UnexpectedEof,
             e => Self::IO(e.to_string()),
         }
-    }
-}
-
-impl From<TryGetError> for Error {
-    fn from(err: TryGetError) -> Self {
-        Self::BadMessage(format!(
-            "only {} bytes remaining, but {} requested",
-            err.available, err.requested
-        ))
     }
 }
 
