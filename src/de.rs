@@ -100,7 +100,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_u8(self.input.try_get_u8()?)
+        visitor.visit_u8(TryBuf::try_get_u8(self.input)?)
     }
 
     fn deserialize_u16<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -114,14 +114,14 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_u32(self.input.try_get_u32()?)
+        visitor.visit_u32(TryBuf::try_get_u32(self.input)?)
     }
 
     fn deserialize_u64<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: serde::de::Visitor<'de>,
     {
-        visitor.visit_u64(self.input.try_get_u64()?)
+        visitor.visit_u64(TryBuf::try_get_u64(self.input)?)
     }
 
     fn deserialize_f32<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
@@ -213,7 +213,7 @@ impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
     where
         V: serde::de::Visitor<'de>,
     {
-        let len = self.input.try_get_u32()? as usize;
+        let len = TryBuf::try_get_u32(self.input)? as usize;
         visitor.visit_seq(SeqDeserializer {
             de: self,
             len: Some(len),
@@ -389,7 +389,7 @@ impl<'de> EnumAccess<'de> for &mut Deserializer<'de> {
     where
         V: serde::de::DeserializeSeed<'de>,
     {
-        let v = IntoDeserializer::<Self::Error>::into_deserializer(self.input.try_get_u32()?);
+        let v = IntoDeserializer::<Self::Error>::into_deserializer(TryBuf::try_get_u32(self.input)?);
         Ok((seed.deserialize(v)?, self))
     }
 }
