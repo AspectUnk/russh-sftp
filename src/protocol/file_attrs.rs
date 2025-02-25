@@ -327,8 +327,8 @@ impl From<&Metadata> for FileAttributes {
             }),
             #[cfg(unix)]
             permissions: Some(metadata.mode()),
-            atime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
-            mtime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
+            atime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
+            mtime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
             ..Default::default()
         };
 
