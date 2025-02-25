@@ -37,7 +37,7 @@ impl<T: Buf> TryBuf for T {
     }
 
     fn try_get_bytes(&mut self) -> Result<Vec<u8>, Error> {
-        let len = self.try_get_u32()? as usize;
+        let len = self.try_get_u32().map_err(|e|Error::UnexpectedBehavior(e.to_string()))? as usize;
         if self.remaining() < len {
             return Err(Error::BadMessage("no remaining for vec".to_owned()));
         }
