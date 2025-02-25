@@ -37,7 +37,9 @@ pub use self::{
     data::Data,
     extended::{Extended, ExtendedReply},
     file::File,
-    file_attrs::{FileAttr, FileAttributes, FileMode, FileType},
+    file_attrs::{
+        FileAttr, FileAttributes, FileMode, FilePermissionFlags, FilePermissions, FileType,
+    },
     fsetstat::FSetStat,
     fstat::Fstat,
     handle::Handle,

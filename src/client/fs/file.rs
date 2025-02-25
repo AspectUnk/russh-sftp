@@ -31,7 +31,7 @@ struct FileState {
 
 /// Provides high-level methods for interaction with a remote file.
 ///
-/// Handle does not necessarily need to be closed because of the [`Drop`] mechanism.
+/// In order to properly close the handle, [`shutdown`] on a file should be called.
 /// Also implement [`AsyncSeek`] and other async i/o implementations.
 ///
 /// # Weakness
