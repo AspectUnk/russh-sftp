@@ -59,7 +59,7 @@ impl SessionInner {
     }
 }
 
-#[async_trait]
+#[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 impl Handler for SessionInner {
     type Error = Error;
 

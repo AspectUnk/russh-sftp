@@ -1,20 +1,17 @@
-use async_trait::async_trait;
 use log::{error, info, LevelFilter};
 use russh::*;
-use russh_keys::*;
 use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 struct Client;
 
-#[async_trait]
 impl client::Handler for Client {
     type Error = anyhow::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &ssh_key::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
         info!("check_server_key: {:?}", server_public_key);
         Ok(true)
@@ -46,6 +43,7 @@ async fn main() {
         .authenticate_password("root", "password")
         .await
         .unwrap()
+        .success()
     {
         let channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();

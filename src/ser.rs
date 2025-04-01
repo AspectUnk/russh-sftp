@@ -4,7 +4,7 @@ use serde::ser::{
     SerializeTupleStruct, SerializeTupleVariant,
 };
 
-use crate::{buf::PutBuf, error::Error};
+use crate::error::Error;
 
 pub struct Serializer {
     output: BytesMut,
@@ -97,7 +97,9 @@ impl<'a> serde::Serializer for &'a mut Serializer {
     }
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
-        self.output.put_str(v);
+        let bytes = v.as_bytes();
+        self.output.put_u32(bytes.len() as u32);
+        self.output.put_slice(bytes);
         Ok(())
     }
 

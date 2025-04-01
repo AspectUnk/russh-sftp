@@ -1,8 +1,6 @@
-use async_trait::async_trait;
 use criterion::{criterion_group, criterion_main, Criterion};
 use log::debug;
 use russh::{client, ChannelId};
-use russh_keys::ssh_key;
 use russh_sftp::client::SftpSession;
 use std::sync::Arc;
 use tokio::{
@@ -12,13 +10,12 @@ use tokio::{
 };
 struct Client;
 
-#[async_trait]
 impl client::Handler for Client {
     type Error = anyhow::Error;
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &ssh_key::PublicKey,
+        server_public_key: &russh::keys::PublicKey,
     ) -> Result<bool, Self::Error> {
         debug!("check_server_key: {:?}", server_public_key);
         Ok(true)
@@ -71,6 +68,7 @@ async fn upload_file(file_count: i32, file_size: i32) {
         .authenticate_password("root", "password")
         .await
         .unwrap()
+        .success()
     {
         let channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();

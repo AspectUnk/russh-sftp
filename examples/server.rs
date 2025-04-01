@@ -1,9 +1,7 @@
-use async_trait::async_trait;
 use log::{error, info, LevelFilter};
+use russh::keys::ssh_key::rand_core::OsRng;
 use russh::server::{Auth, Msg, Server as _, Session};
 use russh::{Channel, ChannelId};
-use russh_keys::ssh_key;
-use russh_keys::ssh_key::rand_core::OsRng;
 use russh_sftp::protocol::{File, FileAttributes, Handle, Name, Status, StatusCode, Version};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -41,7 +39,6 @@ impl SshSession {
     }
 }
 
-#[async_trait]
 impl russh::server::Handler for SshSession {
     type Error = anyhow::Error;
 
@@ -53,7 +50,7 @@ impl russh::server::Handler for SshSession {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        public_key: &russh_keys::ssh_key::PublicKey,
+        public_key: &russh::keys::PublicKey,
     ) -> Result<Auth, Self::Error> {
         info!("credentials: {}, {:?}", user, public_key);
         Ok(Auth::Accept)
@@ -109,7 +106,6 @@ struct SftpSession {
     root_dir_read_done: bool,
 }
 
-#[async_trait]
 impl russh_sftp::server::Handler for SftpSession {
     type Error = StatusCode;
 
@@ -182,7 +178,7 @@ async fn main() {
         auth_rejection_time: Duration::from_secs(3),
         auth_rejection_time_initial: Some(Duration::from_secs(0)),
         keys: vec![
-            russh_keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap(),
+            russh::keys::PrivateKey::random(&mut OsRng, russh::keys::Algorithm::Ed25519).unwrap(),
         ],
         ..Default::default()
     };
