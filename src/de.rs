@@ -47,7 +47,7 @@ where
     deserializer.deserialize_any(DataVisitor)
 }
 
-impl<'de, 'a> serde::Deserializer<'de> for &'a mut Deserializer<'de> {
+impl<'de> serde::Deserializer<'de> for &mut Deserializer<'de> {
     type Error = Error;
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -297,7 +297,7 @@ struct SeqDeserializer<'a, 'de: 'a> {
     len: Option<usize>,
 }
 
-impl<'a, 'de> SeqAccess<'de> for SeqDeserializer<'a, 'de> {
+impl<'de> SeqAccess<'de> for SeqDeserializer<'_, 'de> {
     type Error = Error;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
@@ -324,7 +324,7 @@ struct MapDeserializer<'a, 'de: 'a> {
     de: &'a mut Deserializer<'de>,
 }
 
-impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
+impl<'de> MapAccess<'de> for MapDeserializer<'_, 'de> {
     type Error = Error;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
@@ -346,7 +346,7 @@ impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
     }
 }
 
-impl<'a, 'de> VariantAccess<'de> for &'a mut Deserializer<'de> {
+impl<'de> VariantAccess<'de> for &mut Deserializer<'de> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Self::Error> {
@@ -381,7 +381,7 @@ impl<'a, 'de> VariantAccess<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-impl<'a, 'de> EnumAccess<'de> for &'a mut Deserializer<'de> {
+impl<'de> EnumAccess<'de> for &mut Deserializer<'de> {
     type Error = Error;
     type Variant = Self;
 

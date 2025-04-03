@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use super::{VERSION, impl_packet_for, Packet};
+use super::{impl_packet_for, Packet, VERSION};
 
-/// Implementation for SSH_FXP_INIT
+/// Implementation for `SSH_FXP_INIT`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Init {
     pub version: u32,

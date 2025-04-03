@@ -8,7 +8,6 @@ use std::{
 use tokio::{
     io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf},
     runtime::Handle,
-    sync::Mutex,
 };
 
 use super::Metadata;
@@ -32,14 +31,14 @@ struct FileState {
 
 /// Provides high-level methods for interaction with a remote file.
 ///
-/// Handle does not necessarily need to be closed because of the [`Drop`] mechanism.
+/// In order to properly close the handle, [`shutdown`] on a file should be called.
 /// Also implement [`AsyncSeek`] and other async i/o implementations.
 ///
 /// # Weakness
 /// Using [`SeekFrom::End`] is costly and time-consuming because we need to
 /// request the actual file size from the remote server.
 pub struct File {
-    session: Arc<Mutex<RawSftpSession>>,
+    session: Arc<RawSftpSession>,
     handle: String,
     state: FileState,
     pos: u64,
@@ -49,7 +48,7 @@ pub struct File {
 
 impl File {
     pub(crate) fn new(
-        session: Arc<Mutex<RawSftpSession>>,
+        session: Arc<RawSftpSession>,
         handle: String,
         extensions: Arc<Extensions>,
     ) -> Self {
@@ -71,20 +70,12 @@ impl File {
 
     /// Queries metadata about the remote file.
     pub async fn metadata(&self) -> SftpResult<Metadata> {
-        Ok(self
-            .session
-            .lock()
-            .await
-            .fstat(self.handle.as_str())
-            .await?
-            .attrs)
+        Ok(self.session.fstat(self.handle.as_str()).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
     pub async fn set_metadata(&self, metadata: Metadata) -> SftpResult<()> {
         self.session
-            .lock()
-            .await
             .fsetstat(self.handle.as_str(), metadata)
             .await
             .map(|_| ())
@@ -99,12 +90,7 @@ impl File {
             return Ok(());
         }
 
-        self.session
-            .lock()
-            .await
-            .fsync(self.handle.as_str())
-            .await
-            .map(|_| ())
+        self.session.fsync(self.handle.as_str()).await.map(|_| ())
     }
 }
 
@@ -115,11 +101,11 @@ impl Drop for File {
         }
 
         if let Ok(handle) = Handle::try_current() {
-            let session = self.session.to_owned();
-            let file_handle = self.handle.to_owned();
+            let session = self.session.clone();
+            let file_handle = self.handle.clone();
 
             handle.spawn(async move {
-                let _ = session.lock().await.close(file_handle).await;
+                let _ = session.close(file_handle).await;
             });
         }
     }
@@ -134,7 +120,7 @@ impl AsyncRead for File {
         let poll = Pin::new(match self.state.f_read.as_mut() {
             Some(f) => f,
             None => {
-                let session = self.session.to_owned();
+                let session = self.session.clone();
                 let max_read_len = self
                     .extensions
                     .limits
@@ -142,7 +128,7 @@ impl AsyncRead for File {
                     .and_then(|l| l.read_len)
                     .unwrap_or(MAX_READ_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
+                let file_handle = self.handle.clone();
 
                 let offset = self.pos;
                 let len = if buf.remaining() > max_read_len {
@@ -152,11 +138,7 @@ impl AsyncRead for File {
                 };
 
                 self.state.f_read.get_or_insert(Box::pin(async move {
-                    let result = session
-                        .lock()
-                        .await
-                        .read(file_handle, offset, len as u32)
-                        .await;
+                    let result = session.read(file_handle, offset, len as u32).await;
 
                     match result {
                         Ok(data) => Ok(Some(data.data)),
@@ -196,7 +178,7 @@ impl AsyncSeek for File {
             )),
             None => {
                 let session = self.session.clone();
-                let file_handle = self.handle.to_owned();
+                let file_handle = self.handle.clone();
                 let cur_pos = self.pos as i64;
 
                 self.state.f_seek = Some(Box::pin(async move {
@@ -204,10 +186,10 @@ impl AsyncSeek for File {
                         SeekFrom::Start(pos) => pos as i64,
                         SeekFrom::Current(pos) => cur_pos + pos,
                         SeekFrom::End(pos) => {
-                            let result =
-                                session.lock().await.fstat(file_handle).await.map_err(|e| {
-                                    io::Error::new(io::ErrorKind::Other, e.to_string())
-                                })?;
+                            let result = session
+                                .fstat(file_handle)
+                                .await
+                                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
                             match result.attrs.size {
                                 Some(size) => size as i64 + pos,
@@ -257,7 +239,7 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_write.as_mut() {
             Some(f) => f,
             None => {
-                let session = self.session.to_owned();
+                let session = self.session.clone();
                 let max_write_len = self
                     .extensions
                     .limits
@@ -265,7 +247,7 @@ impl AsyncWrite for File {
                     .and_then(|l| l.write_len)
                     .unwrap_or(MAX_WRITE_LENGTH) as usize;
 
-                let file_handle = self.handle.to_owned();
+                let file_handle = self.handle.clone();
                 let data = buf.to_vec();
 
                 let offset = self.pos;
@@ -277,8 +259,6 @@ impl AsyncWrite for File {
 
                 self.state.f_write.get_or_insert(Box::pin(async move {
                     session
-                        .lock()
-                        .await
                         .write(file_handle, offset, data[..len].to_vec())
                         .await
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
@@ -307,13 +287,11 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_flush.as_mut() {
             Some(f) => f,
             None => {
-                let session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+                let session = self.session.clone();
+                let file_handle = self.handle.clone();
 
                 self.state.f_flush.get_or_insert(Box::pin(async move {
                     session
-                        .lock()
-                        .await
                         .fsync(file_handle)
                         .await
                         .map(|_| ())
@@ -337,13 +315,11 @@ impl AsyncWrite for File {
         let poll = Pin::new(match self.state.f_shutdown.as_mut() {
             Some(f) => f,
             None => {
-                let session = self.session.to_owned();
-                let file_handle = self.handle.to_owned();
+                let session = self.session.clone();
+                let file_handle = self.handle.clone();
 
                 self.state.f_shutdown.get_or_insert(Box::pin(async move {
                     session
-                        .lock()
-                        .await
                         .close(file_handle)
                         .await
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;

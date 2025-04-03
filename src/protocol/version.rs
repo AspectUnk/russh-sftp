@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use super::{impl_packet_for, Packet, VERSION};
 
-/// Implementation for SSH_FXP_VERSION
+/// Implementation for `SSH_FXP_VERSION`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Version {
     pub version: u32,

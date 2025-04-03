@@ -1,6 +1,6 @@
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
-/// Implementation for SSH_FXP_READ
+/// Implementation for `SSH_FXP_READ`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Read {
     pub id: u32,

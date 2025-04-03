@@ -27,9 +27,9 @@ mod symlink;
 mod version;
 mod write;
 
-use bytes::{BufMut, Bytes, BytesMut};
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 
-use crate::{buf::TryBuf, de, error::Error, ser};
+use crate::{de, error::Error, ser};
 
 pub use self::{
     attrs::Attrs,
@@ -37,7 +37,9 @@ pub use self::{
     data::Data,
     extended::{Extended, ExtendedReply},
     file::File,
-    file_attrs::{FileAttr, FileAttributes, FileMode, FileType},
+    file_attrs::{
+        FileAttr, FileAttributes, FileMode, FilePermissionFlags, FilePermissions, FileType,
+    },
     fsetstat::FSetStat,
     fstat::Fstat,
     handle::Handle,

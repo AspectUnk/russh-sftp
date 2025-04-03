@@ -88,11 +88,11 @@ impl FileType {
 
 impl From<FileMode> for FileType {
     fn from(mode: FileMode) -> Self {
-        if mode.contains(FileMode::DIR) {
+        if mode == FileMode::DIR {
             FileType::Dir
-        } else if mode.contains(FileMode::LNK) {
+        } else if mode == FileMode::LNK {
             FileType::Symlink
-        } else if mode.contains(FileMode::REG) {
+        } else if mode == FileMode::REG {
             FileType::File
         } else {
             FileType::Other
@@ -106,7 +106,7 @@ impl From<u32> for FileType {
     }
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
 pub struct FilePermissions {
     pub other_exec: bool,
     pub other_read: bool,
@@ -122,10 +122,10 @@ pub struct FilePermissions {
 impl FilePermissions {
     /// Returns `true` if the file is read-only.
     pub fn is_readonly(&self) -> bool {
-        !(self.owner_read || self.group_read || self.other_read)
+        !self.other_write && !self.group_write && !self.owner_write
     }
 
-    /// Clears all flags or sets them to a positive value. Works uniquely for unix.
+    /// Clears all flags or sets them to a positive value. Works for unix.
     pub fn set_readonly(&mut self, readonly: bool) {
         self.other_exec = !readonly;
         self.other_write = !readonly;
@@ -139,6 +139,24 @@ impl FilePermissions {
             self.group_read = true;
             self.owner_read = true;
         }
+    }
+}
+
+impl fmt::Display for FilePermissions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}{}{}{}{}{}{}{}{}",
+            if self.owner_read { "r" } else { "-" },
+            if self.owner_write { "w" } else { "-" },
+            if self.owner_exec { "x" } else { "-" },
+            if self.group_read { "r" } else { "-" },
+            if self.group_write { "w" } else { "-" },
+            if self.group_exec { "x" } else { "-" },
+            if self.other_read { "r" } else { "-" },
+            if self.other_write { "w" } else { "-" },
+            if self.other_exec { "x" } else { "-" },
+        )
     }
 }
 
@@ -170,7 +188,7 @@ impl From<u32> for FilePermissions {
 /// The fields `user` and `group` are string names of users and groups for
 /// clients that can be displayed in longname. Can be omitted.
 ///
-/// The `flags` field is omitted because it is set by itself depending on the flags
+/// The `flags` field is omitted because it is set by itself depending on the fields
 #[derive(Debug, Clone)]
 pub struct FileAttributes {
     pub size: Option<u64>,
@@ -260,6 +278,20 @@ impl FileAttributes {
             None => Err(ErrorKind::InvalidData.into()),
         }
     }
+
+    /// Creates a structure with omitted attributes
+    pub fn empty() -> Self {
+        Self {
+            size: None,
+            uid: None,
+            user: None,
+            gid: None,
+            group: None,
+            permissions: None,
+            atime: None,
+            mtime: None,
+        }
+    }
 }
 
 /// For packets which require dummy attributes
@@ -278,7 +310,7 @@ impl Default for FileAttributes {
     }
 }
 
-/// For simple conversion of `Metadata` into file attributes
+/// For simple conversion of [`Metadata`] into [`FileAttributes`]
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
         let mut attrs = Self {
@@ -295,8 +327,8 @@ impl From<&Metadata> for FileAttributes {
             }),
             #[cfg(unix)]
             permissions: Some(metadata.mode()),
-            atime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
-            mtime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
+            atime: Some(utils::unix(metadata.accessed().unwrap_or(UNIX_EPOCH))),
+            mtime: Some(utils::unix(metadata.modified().unwrap_or(UNIX_EPOCH))),
             ..Default::default()
         };
 

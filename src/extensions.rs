@@ -1,8 +1,21 @@
 use crate::{error::Error, ser};
 
 pub const LIMITS: &str = "limits@openssh.com";
+pub const HARDLINK: &str = "hardlink@openssh.com";
 pub const FSYNC: &str = "fsync@openssh.com";
 pub const STATVFS: &str = "statvfs@openssh.com";
+
+macro_rules! impl_try_into_bytes {
+    ($struct:ty) => {
+        impl TryInto<Vec<u8>> for $struct {
+            type Error = Error;
+
+            fn try_into(self) -> Result<Vec<u8>, Self::Error> {
+                ser::to_bytes(&self).map(|b| b.to_vec())
+            }
+        }
+    };
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LimitsExtension {
@@ -13,30 +26,26 @@ pub struct LimitsExtension {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct HardlinkExtension {
+    pub oldpath: String,
+    pub newpath: String,
+}
+
+impl_try_into_bytes!(HardlinkExtension);
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FsyncExtension {
     pub handle: String,
 }
 
-impl TryInto<Vec<u8>> for FsyncExtension {
-    type Error = Error;
-
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        ser::to_bytes(&self).map(|b| b.to_vec())
-    }
-}
+impl_try_into_bytes!(FsyncExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatvfsExtension {
     pub path: String,
 }
 
-impl TryInto<Vec<u8>> for StatvfsExtension {
-    type Error = Error;
-
-    fn try_into(self) -> Result<Vec<u8>, Self::Error> {
-        ser::to_bytes(&self).map(|b| b.to_vec())
-    }
-}
+impl_try_into_bytes!(StatvfsExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Statvfs {

@@ -1,33 +1,30 @@
-use async_trait::async_trait;
 use log::{error, info, LevelFilter};
 use russh::*;
-use russh_keys::*;
 use russh_sftp::{client::SftpSession, protocol::OpenFlags};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 struct Client;
 
-#[async_trait]
 impl client::Handler for Client {
     type Error = anyhow::Error;
 
     async fn check_server_key(
-        self,
-        server_public_key: &key::PublicKey,
-    ) -> Result<(Self, bool), Self::Error> {
+        &mut self,
+        server_public_key: &russh::keys::PublicKey,
+    ) -> Result<bool, Self::Error> {
         info!("check_server_key: {:?}", server_public_key);
-        Ok((self, true))
+        Ok(true)
     }
 
     async fn data(
-        self,
+        &mut self,
         channel: ChannelId,
         data: &[u8],
-        session: client::Session,
-    ) -> Result<(Self, client::Session), Self::Error> {
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
         info!("data on channel {:?}: {}", channel, data.len());
-        Ok((self, session))
+        Ok(())
     }
 }
 
@@ -42,7 +39,12 @@ async fn main() {
     let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), sh)
         .await
         .unwrap();
-    if session.authenticate_password("root", "pass").await.unwrap() {
+    if session
+        .authenticate_password("root", "password")
+        .await
+        .unwrap()
+        .success()
+    {
         let channel = session.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
         let sftp = SftpSession::new(channel.into_stream()).await.unwrap();

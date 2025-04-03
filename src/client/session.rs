@@ -1,8 +1,5 @@
 use std::sync::Arc;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
-    sync::Mutex,
-};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use super::{
     error::Error,
@@ -17,6 +14,7 @@ use crate::{
 
 #[derive(Debug, Default)]
 pub(crate) struct Extensions {
+    pub hardlink: bool,
     pub fsync: bool,
     pub statvfs: bool,
     pub limits: Option<Arc<Limits>>,
@@ -25,7 +23,7 @@ pub(crate) struct Extensions {
 /// High-level SFTP implementation for easy interaction with a remote file system.
 /// Contains most methods similar to the native [filesystem](std::fs)
 pub struct SftpSession {
-    session: Arc<Mutex<RawSftpSession>>,
+    session: Arc<RawSftpSession>,
     extensions: Arc<Extensions>,
 }
 
@@ -35,10 +33,27 @@ impl SftpSession {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let mut session = RawSftpSession::new(stream);
-        let version = session.init().await?;
+        Self::new_opts(stream, None).await
+    }
 
+    /// Creates a new session with timeout opt before the first request
+    pub async fn new_opts<S>(stream: S, timeout: Option<u64>) -> SftpResult<Self>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let mut session = RawSftpSession::new(stream);
+
+        // todo: for new options we need builder
+        if let Some(timeout) = timeout {
+            session.set_timeout(timeout).await;
+        }
+
+        let version = session.init().await?;
         let mut extensions = Extensions {
+            hardlink: version
+                .extensions
+                .get(extensions::HARDLINK)
+                .is_some_and(|e| e == "1"),
             fsync: version
                 .extensions
                 .get(extensions::FSYNC)
@@ -63,7 +78,7 @@ impl SftpSession {
         }
 
         Ok(Self {
-            session: Arc::new(Mutex::new(session)),
+            session: Arc::new(session),
             extensions: Arc::new(extensions),
         })
     }
@@ -71,12 +86,12 @@ impl SftpSession {
     /// Set the maximum response time in seconds.
     /// Default: 10 seconds
     pub async fn set_timeout(&self, secs: u64) {
-        self.session.lock().await.set_timeout(secs);
+        self.session.set_timeout(secs).await;
     }
 
     /// Closes the inner channel stream.
     pub async fn close(&self) -> SftpResult<()> {
-        self.session.lock().await.close_session()
+        self.session.close_session()
     }
 
     /// Attempts to open a file in read-only mode.
@@ -85,7 +100,7 @@ impl SftpSession {
     }
 
     /// Opens a file in write-only mode.
-    /// 
+    ///
     /// This function will create a file if it does not exist, and will truncate it if it does.
     pub async fn create<T: Into<String>>(&self, filename: T) -> SftpResult<File> {
         self.open_with_flags(
@@ -101,21 +116,18 @@ impl SftpSession {
         filename: T,
         flags: OpenFlags,
     ) -> SftpResult<File> {
-        let handle = self
-            .session
-            .lock()
+        self.open_with_flags_and_attributes(filename, flags, FileAttributes::empty())
             .await
-            .open(
-                filename,
-                flags,
-                FileAttributes {
-                    permissions: Some(0o755 | flags.bits()),
-                    ..Default::default()
-                },
-            )
-            .await?
-            .handle;
+    }
 
+    /// Attempts to open or create the file in the specified mode and with specified file attributes
+    pub async fn open_with_flags_and_attributes<T: Into<String>>(
+        &self,
+        filename: T,
+        flags: OpenFlags,
+        attributes: FileAttributes,
+    ) -> SftpResult<File> {
+        let handle = self.session.open(filename, flags, attributes).await?.handle;
         Ok(File::new(
             self.session.clone(),
             handle,
@@ -125,8 +137,8 @@ impl SftpSession {
 
     /// Requests the remote party for the absolute from the relative path.
     pub async fn canonicalize<T: Into<String>>(&self, path: T) -> SftpResult<String> {
-        let name = self.session.lock().await.realpath(path).await?;
-        match name.files.get(0) {
+        let name = self.session.realpath(path).await?;
+        match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
@@ -135,9 +147,7 @@ impl SftpSession {
     /// Creates a new empty directory.
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
         self.session
-            .lock()
-            .await
-            .mkdir(path, FileAttributes::default())
+            .mkdir(path, FileAttributes::empty())
             .await
             .map(|_| ())
     }
@@ -171,10 +181,10 @@ impl SftpSession {
     /// Returns an iterator over the entries within a directory.
     pub async fn read_dir<P: Into<String>>(&self, path: P) -> SftpResult<ReadDir> {
         let mut files = vec![];
-        let handle = self.session.lock().await.opendir(path).await?.handle;
+        let handle = self.session.opendir(path).await?.handle;
 
         loop {
-            match self.session.lock().await.readdir(handle.as_str()).await {
+            match self.session.readdir(handle.as_str()).await {
                 Ok(name) => {
                     files = name
                         .files
@@ -188,7 +198,7 @@ impl SftpSession {
             }
         }
 
-        self.session.lock().await.close(handle).await?;
+        self.session.close(handle).await?;
 
         Ok(ReadDir {
             entries: files.into(),
@@ -197,8 +207,8 @@ impl SftpSession {
 
     /// Reads a symbolic link, returning the file that the link points to.
     pub async fn read_link<P: Into<String>>(&self, path: P) -> SftpResult<String> {
-        let name = self.session.lock().await.readlink(path).await?;
-        match name.files.get(0) {
+        let name = self.session.readlink(path).await?;
+        match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
@@ -206,12 +216,12 @@ impl SftpSession {
 
     /// Removes the specified folder.
     pub async fn remove_dir<P: Into<String>>(&self, path: P) -> SftpResult<()> {
-        self.session.lock().await.rmdir(path).await.map(|_| ())
+        self.session.rmdir(path).await.map(|_| ())
     }
 
     /// Removes the specified file.
     pub async fn remove_file<T: Into<String>>(&self, filename: T) -> SftpResult<()> {
-        self.session.lock().await.remove(filename).await.map(|_| ())
+        self.session.remove(filename).await.map(|_| ())
     }
 
     /// Rename a file or directory to a new name.
@@ -220,12 +230,7 @@ impl SftpSession {
         O: Into<String>,
         N: Into<String>,
     {
-        self.session
-            .lock()
-            .await
-            .rename(oldpath, newpath)
-            .await
-            .map(|_| ())
+        self.session.rename(oldpath, newpath).await.map(|_| ())
     }
 
     /// Creates a symlink of the specified target.
@@ -234,17 +239,12 @@ impl SftpSession {
         P: Into<String>,
         T: Into<String>,
     {
-        self.session
-            .lock()
-            .await
-            .symlink(path, target)
-            .await
-            .map(|_| ())
+        self.session.symlink(path, target).await.map(|_| ())
     }
 
     /// Queries metadata about the remote file.
     pub async fn metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.session.lock().await.stat(path).await?.attrs)
+        Ok(self.session.stat(path).await?.attrs)
     }
 
     /// Sets metadata for a remote file.
@@ -253,16 +253,23 @@ impl SftpSession {
         path: P,
         metadata: Metadata,
     ) -> Result<(), Error> {
-        self.session
-            .lock()
-            .await
-            .setstat(path, metadata)
-            .await
-            .map(|_| ())
+        self.session.setstat(path, metadata).await.map(|_| ())
     }
 
     pub async fn symlink_metadata<P: Into<String>>(&self, path: P) -> SftpResult<Metadata> {
-        Ok(self.session.lock().await.lstat(path).await?.attrs)
+        Ok(self.session.lstat(path).await?.attrs)
+    }
+
+    pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        if !self.extensions.hardlink {
+            return Ok(false);
+        }
+
+        self.session.hardlink(oldpath, newpath).await.map(|_| true)
     }
 
     /// Performs a statvfs on the remote file system path.
@@ -272,6 +279,6 @@ impl SftpSession {
             return Ok(None);
         }
 
-        self.session.lock().await.statvfs(path).await.map(Some)
+        self.session.statvfs(path).await.map(Some)
     }
 }
