@@ -118,7 +118,7 @@ pub trait Handler: Sized {
         id: u32,
         handle: String,
         attrs: FileAttributes,
-    ) -> impl Future<Output = Result<Attrs, Self::Error>> + Send {
+    ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
     }
