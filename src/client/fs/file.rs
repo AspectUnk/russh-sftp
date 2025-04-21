@@ -131,11 +131,7 @@ impl AsyncRead for File {
                 let file_handle = self.handle.clone();
 
                 let offset = self.pos;
-                let len = if buf.remaining() > max_read_len {
-                    max_read_len
-                } else {
-                    buf.remaining()
-                };
+                let len = usize::min(buf.remaining(), max_read_len);
 
                 self.state.f_read.get_or_insert(Box::pin(async move {
                     let result = session.read(file_handle, offset, len as u32).await;
@@ -248,18 +244,14 @@ impl AsyncWrite for File {
                     .unwrap_or(MAX_WRITE_LENGTH) as usize;
 
                 let file_handle = self.handle.clone();
-                let data = buf.to_vec();
 
                 let offset = self.pos;
-                let len = if data.len() > max_write_len {
-                    max_write_len
-                } else {
-                    data.len()
-                };
+                let len = usize::min(buf.len(), max_write_len);
+                let data = buf[..len].to_vec();
 
                 self.state.f_write.get_or_insert(Box::pin(async move {
                     session
-                        .write(file_handle, offset, data[..len].to_vec())
+                        .write(file_handle, offset, data)
                         .await
                         .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
                     Ok(len)
