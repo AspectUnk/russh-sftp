@@ -1,16 +1,14 @@
 use std::{collections::HashMap, future::Future};
 
-use crate::protocol::{
-    Attrs, Data, FileAttributes, Handle, Name, OpenFlags, Packet, Status, StatusCode, Version,
-};
+use crate::protocol::{Attrs, Data, FileAttributes, Handle, HandlerError, Name, OpenFlags, Packet, Status, Version};
 
 /// Server handler for each client. This is `async_trait`
 #[cfg_attr(feature = "async-trait", async_trait::async_trait)]
 pub trait Handler: Sized {
-    /// The type must have an `Into<StatusCode>`
+    /// The type must have an `Into<HandlerError>`
     /// implementation because a response must be sent
     /// to any request, even if completed by error.
-    type Error: Into<StatusCode> + Send;
+    type Error: Into<HandlerError> + Send;
 
     /// Called by the handler when the packet is not implemented
     fn unimplemented(&self) -> Self::Error;
