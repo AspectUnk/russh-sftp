@@ -26,6 +26,7 @@ mod status;
 mod symlink;
 mod version;
 mod write;
+mod handler_error;
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
@@ -62,6 +63,7 @@ pub use self::{
     symlink::Symlink,
     version::Version,
     write::Write,
+    handler_error::HandlerError,
 };
 
 pub const VERSION: u32 = 3;

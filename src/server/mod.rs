@@ -7,14 +7,22 @@ pub use self::handler::Handler;
 
 use crate::{
     error::Error,
-    protocol::{Packet, StatusCode},
+    protocol::{Packet, StatusCode, Status, HandlerError},
     utils::read_packet,
 };
 
 macro_rules! into_wrap {
     ($id:expr, $handler:expr, $var:ident; $($arg:ident),*) => {
         match $handler.$var($($var.$arg),*).await {
-            Err(err) => Packet::error($id, err.into()),
+            Err(err) => {
+                let err: HandlerError = err.into();
+                Packet::Status(Status {
+                    id: $id,
+                    status_code: err.status_code,
+                    error_message: err.error_message,
+                    language_tag: err.language_tag,
+                })
+            },
             Ok(packet) => packet.into(),
         }
     };

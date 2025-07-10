@@ -1,5 +1,5 @@
 use thiserror::Error;
-
+use crate::protocol::handler_error::HandlerError;
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
 /// Error Codes for SSH_FXP_STATUS
@@ -52,3 +52,13 @@ pub struct Status {
 
 impl_request_id!(Status);
 impl_packet_for!(Status);
+
+impl Into<HandlerError> for StatusCode {
+    fn into(self) -> HandlerError {
+        HandlerError {
+            status_code: self,
+            error_message: self.to_string(),
+            language_tag: "en-US".to_string(),
+        }
+    }
+}
