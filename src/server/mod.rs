@@ -8,7 +8,6 @@ pub use self::handler::Handler;
 use crate::{
     error::Error,
     protocol::{Packet, StatusCode},
-    utils::read_packet,
 };
 
 macro_rules! into_wrap {
@@ -18,6 +17,29 @@ macro_rules! into_wrap {
             Ok(packet) => packet.into(),
         }
     };
+}
+
+/// Configuration for the SFTP server.
+///
+/// Note: this is a #[non_exhaustive] struct to enable forwards compatibility.
+/// To construct, use the `ServerConfig::default()`.
+#[non_exhaustive]
+#[derive(Clone, Debug)]
+pub struct ServerConfig {
+    /// Maximum allowed size of SFTP packets sent by clients.
+    ///
+    /// Protects against malicious clients sending excessively large packets.
+    pub max_client_packet_len: u32,
+}
+
+impl Default for ServerConfig {
+    fn default() -> Self {
+        Self {
+            // Most SFTP clients use 32 kb, even when writing large files.
+            // A larger but sane default is set for compatibility.
+            max_client_packet_len: 1 * 1024 * 1024, // 1 MiB
+        }
+    }
 }
 
 async fn process_request<H>(packet: Packet, handler: &mut H) -> Packet
@@ -51,12 +73,16 @@ where
     }
 }
 
-async fn process_handler<H, S>(stream: &mut S, handler: &mut H) -> Result<(), Error>
+async fn process_handler<H, S>(
+    stream: &mut S,
+    handler: &mut H,
+    cfg: &ServerConfig,
+) -> Result<(), Error>
 where
     H: Handler + Send,
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut bytes = read_packet(stream).await?;
+    let mut bytes = crate::utils::read_packet(stream, cfg.max_client_packet_len).await?;
 
     let response = match Packet::try_from(&mut bytes) {
         Ok(request) => process_request(request, handler).await,
@@ -71,14 +97,23 @@ where
 }
 
 /// Run processing stream as SFTP
-pub async fn run<S, H>(mut stream: S, mut handler: H)
+pub async fn run<S, H>(stream: S, handler: H)
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    H: Handler + Send + 'static,
+{
+    run_with_config(stream, handler, ServerConfig::default()).await
+}
+
+/// Run processing stream as SFTP with custom server configuration
+pub async fn run_with_config<S, H>(mut stream: S, mut handler: H, cfg: ServerConfig)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
     tokio::spawn(async move {
         loop {
-            match process_handler(&mut stream, &mut handler).await {
+            match process_handler(&mut stream, &mut handler, &cfg).await {
                 Err(Error::UnexpectedEof) => break,
                 Err(err) => warn!("{}", err),
                 Ok(_) => (),

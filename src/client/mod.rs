@@ -50,7 +50,7 @@ where
     S: AsyncRead + Unpin,
     H: Handler + Send,
 {
-    let mut bytes = read_packet(stream).await?;
+    let mut bytes = read_packet(stream, u32::MAX).await?;
     Ok(execute_handler(&mut bytes, handler).await?)
 }
 
