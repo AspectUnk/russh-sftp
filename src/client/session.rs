@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     client::Config,
-    extensions::{self, Statvfs},
+    extensions::{self, CheckFile, Statvfs},
     protocol::{FileAttributes, OpenFlags, StatusCode},
 };
 
@@ -28,6 +28,7 @@ pub(crate) struct Features {
 pub struct SftpSession {
     session: Arc<RawSftpSession>,
     features: Features,
+    check_file_algorithms: Option<String>,
 }
 
 impl SftpSession {
@@ -51,6 +52,9 @@ impl SftpSession {
         let version = session.init().await?;
         let has_extension = |name, ver| version.extensions.get(name).is_some_and(|v| v == ver);
 
+        // check-file's value is a hash-algorithm list, not a version number — detect by presence.
+        let check_file_algorithms = version.extensions.get(extensions::CHECK_FILE).cloned();
+
         let mut features = Features {
             hardlink: has_extension(extensions::HARDLINK, "1"),
             fsync: has_extension(extensions::FSYNC, "1"),
@@ -72,6 +76,7 @@ impl SftpSession {
         Ok(Self {
             session: Arc::new(session),
             features,
+            check_file_algorithms,
         })
     }
 
@@ -272,5 +277,30 @@ impl SftpSession {
         }
 
         self.session.statvfs(path).await.map(Some)
+    }
+
+    /// Hash algorithms the server advertises for the `check-file` extension
+    /// (comma-separated, in server preference order), or `None` if unsupported.
+    pub fn check_file_algorithms(&self) -> Option<&str> {
+        self.check_file_algorithms.as_deref()
+    }
+
+    /// Computes hashes of a remote file using the `check-file` extension.
+    /// Returns [`Error::Unsupported`] if the server does not advertise it.
+    pub async fn check_file<P: Into<String>, A: Into<String>>(
+        &self,
+        path: P,
+        algorithms: A,
+        start_offset: u64,
+        length: u64,
+        block_size: u32,
+    ) -> SftpResult<CheckFile> {
+        if self.check_file_algorithms.is_none() {
+            return Err(Error::Unsupported(extensions::CHECK_FILE.to_owned()));
+        }
+
+        self.session
+            .check_file_name(path, algorithms, start_offset, length, block_size)
+            .await
     }
 }

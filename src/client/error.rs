@@ -26,6 +26,9 @@ pub enum Error {
     /// Occurs when unexpected server behavior differs from the protocol specifition
     #[error("{0}")]
     UnexpectedBehavior(String),
+    /// Occurs when the server does not advertise support for a requested extension
+    #[error("Unsupported extension: {0}")]
+    Unsupported(String),
 }
 
 impl From<Status> for Error {
