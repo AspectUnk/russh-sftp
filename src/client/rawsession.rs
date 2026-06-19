@@ -17,7 +17,8 @@ use crate::{
     client::{run, Config},
     de,
     extensions::{
-        self, FsyncExtension, HardlinkExtension, LimitsExtension, Statvfs, StatvfsExtension,
+        self, CheckFile, CheckFileExtension, FsyncExtension, HardlinkExtension, LimitsExtension,
+        Statvfs, StatvfsExtension,
     },
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
@@ -739,6 +740,76 @@ impl RawSftpSession {
             }
             _ => Err(Error::UnexpectedPacket),
         }
+    }
+
+    async fn check_file<I: Into<String>, A: Into<String>>(
+        &self,
+        request: &str,
+        identifier: I,
+        algorithms: A,
+        start_offset: u64,
+        length: u64,
+        block_size: u32,
+    ) -> SftpResult<CheckFile> {
+        let result = self
+            .extended(
+                request,
+                CheckFileExtension {
+                    identifier: identifier.into(),
+                    hash_algorithm_list: algorithms.into(),
+                    start_offset,
+                    length,
+                    block_size,
+                }
+                .try_into()?,
+            )
+            .await?;
+
+        match result {
+            Packet::ExtendedReply(reply) => Ok(de::from_bytes::<CheckFile>(&mut reply.data.into())?),
+            Packet::Status(status) if status.status_code != StatusCode::Ok => {
+                Err(Error::Status(status))
+            }
+            _ => Err(Error::UnexpectedPacket),
+        }
+    }
+
+    pub async fn check_file_name<P: Into<String>, A: Into<String>>(
+        &self,
+        path: P,
+        algorithms: A,
+        start_offset: u64,
+        length: u64,
+        block_size: u32,
+    ) -> SftpResult<CheckFile> {
+        self.check_file(
+            extensions::CHECK_FILE_NAME,
+            path,
+            algorithms,
+            start_offset,
+            length,
+            block_size,
+        )
+        .await
+    }
+
+    pub async fn check_file_handle<H: Into<String>, A: Into<String>>(
+        &self,
+        handle: H,
+        algorithms: A,
+        start_offset: u64,
+        length: u64,
+        block_size: u32,
+    ) -> SftpResult<CheckFile> {
+        self.check_file(
+            extensions::CHECK_FILE_HANDLE,
+            handle,
+            algorithms,
+            start_offset,
+            length,
+            block_size,
+        )
+        .await
     }
 }
 

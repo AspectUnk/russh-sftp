@@ -1,9 +1,12 @@
-use crate::{error::Error, ser};
+use crate::{de::data_deserialize, error::Error, ser};
 
 pub const LIMITS: &str = "limits@openssh.com";
 pub const HARDLINK: &str = "hardlink@openssh.com";
 pub const FSYNC: &str = "fsync@openssh.com";
 pub const STATVFS: &str = "statvfs@openssh.com";
+pub const CHECK_FILE: &str = "check-file";
+pub const CHECK_FILE_NAME: &str = "check-file-name";
+pub const CHECK_FILE_HANDLE: &str = "check-file-handle";
 
 macro_rules! impl_try_into_bytes {
     ($struct:ty) => {
@@ -46,6 +49,24 @@ pub struct StatvfsExtension {
 }
 
 impl_try_into_bytes!(StatvfsExtension);
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckFileExtension {
+    pub identifier: String,
+    pub hash_algorithm_list: String,
+    pub start_offset: u64,
+    pub length: u64,
+    pub block_size: u32,
+}
+
+impl_try_into_bytes!(CheckFileExtension);
+
+#[derive(Debug, Deserialize)]
+pub struct CheckFile {
+    pub hash_algorithm: String,
+    #[serde(deserialize_with = "data_deserialize")]
+    pub hashes: Vec<u8>,
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Statvfs {
