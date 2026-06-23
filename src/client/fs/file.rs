@@ -91,6 +91,110 @@ impl File {
 
         self.session.fsync(self.handle.as_str()).await.map(|_| ())
     }
+
+    /// Streams the remote file from the current position to `writer` using up
+    /// to `max_inflight` concurrent SFTP `READ` requests, hiding per-request
+    /// RTT. Each request asks for up to the negotiated `read_len`
+    /// (or `max_packet_len - READ_OVERHEAD_LENGTH` when no limit is advertised).
+    ///
+    /// The [`AsyncRead`] impl issues one `READ` at a time and waits for the
+    /// reply before sending the next, so sustained throughput is bounded by
+    /// `chunk_size / RTT`. This helper mirrors how OpenSSH's `sftp` client
+    /// keeps ~64 outstanding requests by default, so on a long-RTT link
+    /// (e.g. transcontinental SSH) it can saturate the channel.
+    ///
+    /// Chunks are reassembled in offset order before being written to `writer`,
+    /// so the output is byte-identical to a sequential read. Stops cleanly on
+    /// the first server-signalled EOF (either an `Eof` status or a short
+    /// read).
+    ///
+    /// Returns the number of bytes streamed. Updates `self.pos` to the new
+    /// read offset. Memory usage is bounded by `max_inflight * chunk_size`
+    /// (chunks held in an in-order reassembly buffer plus in-flight requests).
+    pub async fn read_to_writer_pipelined<W>(
+        &mut self,
+        writer: &mut W,
+        max_inflight: usize,
+    ) -> SftpResult<u64>
+    where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        use futures::stream::{FuturesUnordered, StreamExt};
+        use std::collections::BTreeMap;
+        use tokio::io::AsyncWriteExt;
+
+        if max_inflight == 0 {
+            return Err(Error::UnexpectedBehavior(
+                "max_inflight must be at least 1".to_owned(),
+            ));
+        }
+
+        let chunk_size = self
+            .features
+            .limits
+            .and_then(|l| l.read_len)
+            .unwrap_or_else(|| {
+                self.features
+                    .max_packet_len
+                    .saturating_sub(READ_OVERHEAD_LENGTH) as u64
+            }) as usize;
+
+        let mut total: u64 = 0;
+        let mut next_offset = self.pos;
+        let mut next_to_write = self.pos;
+        let mut pending: BTreeMap<u64, Vec<u8>> = BTreeMap::new();
+        let mut in_flight = FuturesUnordered::new();
+        let mut eof = false;
+
+        loop {
+            // Schedule new read requests until we hit the cap or have observed EOF.
+            while !eof && in_flight.len() < max_inflight {
+                let session = self.session.clone();
+                let handle = self.handle.clone();
+                let off = next_offset;
+                let len = chunk_size as u32;
+
+                in_flight.push(async move {
+                    match session.read(handle, off, len).await {
+                        Ok(data) => Ok::<(u64, Option<Vec<u8>>), Error>((off, Some(data.data))),
+                        Err(Error::Status(s)) if s.status_code == StatusCode::Eof => {
+                            Ok((off, None))
+                        }
+                        Err(e) => Err(e),
+                    }
+                });
+
+                next_offset += chunk_size as u64;
+            }
+
+            match in_flight.next().await {
+                Some(Ok((off, Some(data)))) => {
+                    let data: Vec<u8> = data;
+                    if data.is_empty() {
+                        eof = true;
+                    } else {
+                        pending.insert(off, data);
+                    }
+                }
+                Some(Ok((_, None))) => {
+                    eof = true;
+                }
+                Some(Err(e)) => return Err(e),
+                None => break,
+            }
+
+            // Flush in-order chunks to `writer` as they become available.
+            while let Some(chunk) = pending.remove(&next_to_write) {
+                let n = chunk.len() as u64;
+                writer.write_all(&chunk).await?;
+                next_to_write += n;
+                total += n;
+            }
+        }
+
+        self.pos = next_to_write;
+        Ok(total)
+    }
 }
 
 fn check_write_result(
