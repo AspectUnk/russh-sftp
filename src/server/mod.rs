@@ -95,8 +95,14 @@ where
     Ok(())
 }
 
-/// Run processing stream as SFTP
-pub async fn run<S, H>(stream: S, handler: H)
+/// Run processing stream as SFTP.
+///
+/// The SFTP request loop is spawned onto a background task; the returned
+/// [`tokio::task::JoinHandle`] resolves once the client closes the stream
+/// (EOF). Awaiting it lets callers observe when the session ends — e.g. to
+/// close the underlying transport/channel afterwards. The handle may simply
+/// be dropped to keep the previous fire-and-forget behaviour.
+pub async fn run<S, H>(stream: S, handler: H) -> tokio::task::JoinHandle<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
@@ -104,8 +110,14 @@ where
     run_with_config(stream, handler, Config::default()).await
 }
 
-/// Run processing stream as SFTP with custom configuration
-pub async fn run_with_config<S, H>(mut stream: S, mut handler: H, cfg: Config)
+/// Run processing stream as SFTP with custom configuration.
+///
+/// See [`run`] for details on the returned [`tokio::task::JoinHandle`].
+pub async fn run_with_config<S, H>(
+    mut stream: S,
+    mut handler: H,
+    cfg: Config,
+) -> tokio::task::JoinHandle<()>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
@@ -120,5 +132,5 @@ where
         }
 
         debug!("sftp stream ended");
-    });
+    })
 }
