@@ -18,6 +18,7 @@ pub(crate) struct Features {
     pub hardlink: bool,
     pub fsync: bool,
     pub statvfs: bool,
+    pub expand_path: bool,
     pub limits: Option<Limits>,
     pub max_concurrent_writes: usize,
     pub max_packet_len: u32,
@@ -55,6 +56,7 @@ impl SftpSession {
             hardlink: has_extension(extensions::HARDLINK, "1"),
             fsync: has_extension(extensions::FSYNC, "1"),
             statvfs: has_extension(extensions::STATVFS, "2"),
+            expand_path: has_extension(extensions::EXPAND_PATH, "1"),
             limits: None,
             max_concurrent_writes,
             max_packet_len,
@@ -128,6 +130,22 @@ impl SftpSession {
         let name = self.session.realpath(path).await?;
         match name.files.first() {
             Some(file) => Ok(file.filename.to_owned()),
+            None => Err(Error::UnexpectedBehavior("no file".to_owned())),
+        }
+    }
+
+    /// Expands a `~`/`~user`-prefixed or relative path and returns its
+    /// canonicalised absolute form, via the `expand-path@openssh.com`
+    /// extension. Returns [`Ok(None)`] if the remote SFTP server does not
+    /// support the extension.
+    pub async fn expand_path<T: Into<String>>(&self, path: T) -> SftpResult<Option<String>> {
+        if !self.features.expand_path {
+            return Ok(None);
+        }
+
+        let name = self.session.expand_path(path).await?;
+        match name.files.first() {
+            Some(file) => Ok(Some(file.filename.to_owned())),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
     }
