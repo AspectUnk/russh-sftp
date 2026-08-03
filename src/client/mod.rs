@@ -13,7 +13,7 @@ use bytes::Bytes;
 use tokio::{
     io::{self, AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
-    sync::mpsc,
+    sync::{mpsc, oneshot},
 };
 use tokio_util::sync::CancellationToken;
 
@@ -75,14 +75,18 @@ where
     Ok(execute_handler(&mut bytes, handler).await?)
 }
 
+/// A queued outgoing packet, paired with an optional notification that
+/// fires once the bytes have actually been handed to the socket.
+pub(crate) type WriteItem = (Bytes, Option<oneshot::Sender<()>>);
+
 /// Run processing stream as SFTP client. Is a simple handler of incoming
 /// and outgoing packets. Can be used for non-standard implementations
-pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
+pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<WriteItem>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
-    let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+    let (tx, mut rx) = mpsc::unbounded_channel::<WriteItem>();
     let (mut rd, mut wr) = io::split(stream);
 
     let rc = CancellationToken::new();
@@ -110,13 +114,20 @@ where
     runtime::spawn(async move {
         loop {
             select! {
-                Some(data) = rx.recv() => {
+                Some((data, sent)) = rx.recv() => {
                     if data.is_empty() {
                         let _ = wr.shutdown().await;
                         break;
                     }
 
                     let _ = wr.write_all(&data[..]).await;
+
+                    // Signal that the packet has actually been handed to
+                    // the socket, so the caller can start its response
+                    // timeout from here rather than from enqueue time.
+                    if let Some(sent) = sent {
+                        let _ = sent.send(());
+                    }
                 },
                 _ = wc.cancelled() => break,
             }
