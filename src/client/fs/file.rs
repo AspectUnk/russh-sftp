@@ -7,7 +7,7 @@ use std::{
     task::{ready, Context, Poll},
 };
 use tokio::{
-    io::{AsyncRead, AsyncSeek, AsyncWrite, ReadBuf},
+    io::{AsyncRead, AsyncSeek, AsyncWrite, AsyncWriteExt, ReadBuf},
     sync::oneshot,
 };
 
@@ -34,9 +34,12 @@ struct FileState {
 
 /// Provides high-level methods for interaction with a remote file.
 ///
-/// In order to properly close the handle, [`shutdown`](tokio::io::AsyncWriteExt::shutdown)
-/// on a file should be called.
+/// In order to properly close the handle, [`File::close`] or
+/// [`shutdown`](tokio::io::AsyncWriteExt::shutdown) on a file should be called.
 /// Also implement [`AsyncSeek`] and other async i/o implementations.
+///
+/// On drop the handle is closed as well, but the reply is not awaited, so
+/// pending write errors and the close status are silently discarded
 ///
 /// # Weakness
 /// Using [`SeekFrom::End`] is costly and time-consuming because we need to
@@ -91,6 +94,13 @@ impl File {
         }
 
         self.session.fsync(self.handle.as_str()).await.map(|_| ())
+    }
+
+    /// Closes the file waiting for all pending writes and the close itself
+    /// to be confirmed by the remote party.
+    /// Equivalent to [`shutdown`](tokio::io::AsyncWriteExt::shutdown)
+    pub async fn close(mut self) -> io::Result<()> {
+        self.shutdown().await
     }
 }
 
