@@ -1,6 +1,6 @@
 use log::{error, info, LevelFilter};
 use russh::keys::{Algorithm, PrivateKey};
-use russh::server::{Auth, Msg, Server as _, Session};
+use russh::server::{Auth, ChannelOpenHandle, Msg, Server as _, Session};
 use russh::{Channel, ChannelId};
 use russh_sftp::protocol::{File, FileAttributes, Handle, Name, Status, StatusCode, Version};
 use std::collections::HashMap;
@@ -59,13 +59,15 @@ impl russh::server::Handler for SshSession {
     async fn channel_open_session(
         &mut self,
         channel: Channel<Msg>,
+        reply: ChannelOpenHandle,
         _session: &mut Session,
-    ) -> Result<bool, Self::Error> {
+    ) -> Result<(), Self::Error> {
         {
             let mut clients = self.clients.lock().await;
             clients.insert(channel.id(), channel);
         }
-        Ok(true)
+        reply.accept().await;
+        Ok(())
     }
 
     async fn channel_eof(
