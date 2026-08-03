@@ -134,22 +134,6 @@ impl SftpSession {
         }
     }
 
-    /// Expands a `~`/`~user`-prefixed or relative path and returns its
-    /// canonicalised absolute form, via the `expand-path@openssh.com`
-    /// extension. Returns [`Ok(None)`] if the remote SFTP server does not
-    /// support the extension.
-    pub async fn expand_path<T: Into<String>>(&self, path: T) -> SftpResult<Option<String>> {
-        if !self.features.expand_path {
-            return Ok(None);
-        }
-
-        let name = self.session.expand_path(path).await?;
-        match name.files.first() {
-            Some(file) => Ok(Some(file.filename.to_owned())),
-            None => Err(Error::UnexpectedBehavior("no file".to_owned())),
-        }
-    }
-
     /// Creates a new empty directory.
     pub async fn create_dir<T: Into<String>>(&self, path: T) -> SftpResult<()> {
         self.session
@@ -283,12 +267,26 @@ impl SftpSession {
     }
 
     /// Performs a statvfs on the remote file system path.
-    /// Returns [`Ok(None)`] if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
+    /// Returns `Ok(None)` if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
     pub async fn fs_info<P: Into<String>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
         if !self.features.statvfs {
             return Ok(None);
         }
 
         self.session.statvfs(path).await.map(Some)
+    }
+
+    /// Expands a `~`/`~user`-prefixed or relative path and returns its canonicalized absolute form.
+    /// Returns `Ok(None)` if the remote SFTP server does not support `expand-path@openssh.com` extension v1.
+    pub async fn expand_path<P: Into<String>>(&self, path: P) -> SftpResult<Option<String>> {
+        if !self.features.expand_path {
+            return Ok(None);
+        }
+
+        let name = self.session.expand_path(path).await?;
+        match name.files.first() {
+            Some(file) => Ok(Some(file.filename.to_owned())),
+            None => Err(Error::UnexpectedBehavior("no file".to_owned())),
+        }
     }
 }

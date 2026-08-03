@@ -34,7 +34,8 @@ struct FileState {
 
 /// Provides high-level methods for interaction with a remote file.
 ///
-/// In order to properly close the handle, [`shutdown`] on a file should be called.
+/// In order to properly close the handle, [`shutdown`](tokio::io::AsyncWriteExt::shutdown)
+/// on a file should be called.
 /// Also implement [`AsyncSeek`] and other async i/o implementations.
 ///
 /// # Weakness

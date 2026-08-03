@@ -22,7 +22,7 @@ The main idea of the project is to provide an implementation for interacting wit
 - [x] Server side
 - [x] Simple server example
 - [ ] Full server example
-- [x] Extension support: `limits@openssh.com`, `hardlink@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`, `expand-path@openssh.com` (client only)
+- [x] Extension support: `limits@openssh.com`, `hardlink@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`, `expand-path@openssh.com`
 - [ ] Unit tests
 - [x] Workflow
 
