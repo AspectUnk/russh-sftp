@@ -150,8 +150,8 @@ impl russh_sftp::server::Handler for SftpSession {
             return Ok(Name {
                 id,
                 files: vec![
-                    File::new("foo", FileAttributes::default()),
-                    File::new("bar", FileAttributes::default()),
+                    File::new("foo", FileAttributes::dummy()),
+                    File::new("bar", FileAttributes::dummy()),
                 ],
             });
         }
