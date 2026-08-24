@@ -35,7 +35,7 @@ wasm-bindgen-futures = "0.4.76"
 gloo-timers = { version = "0.4.0", features = ["futures"] }
 
 [dev-dependencies]
-russh = "0.62.5"
+russh = "0.63.0"
 env_logger = "0.11.11"
 anyhow = "1.0.104"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
