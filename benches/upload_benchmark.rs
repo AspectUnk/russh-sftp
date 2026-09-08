@@ -17,7 +17,7 @@ impl client::Handler for Client {
 
     async fn check_server_key(
         &mut self,
-        server_public_key: &russh::keys::PublicKey,
+        server_public_key: &russh::keys::PublicKeyOrCertificate,
     ) -> Result<bool, Self::Error> {
         debug!("check_server_key: {:?}", server_public_key);
         Ok(true)
@@ -35,7 +35,10 @@ impl client::Handler for Client {
 }
 
 async fn connect() -> SftpSession {
-    let config = russh::client::Config::default();
+    let config = russh::client::Config {
+        nodelay: true,
+        ..Default::default()
+    };
     let mut session = russh::client::connect(Arc::new(config), ("localhost", 22), Client {})
         .await
         .unwrap();
@@ -57,9 +60,12 @@ async fn upload_many(sftp: &SftpSession, data: Arc<Vec<u8>>) {
         let chunk = Arc::clone(&data);
         tasks.push(task::spawn(async move {
             file.write_all(&chunk).await.unwrap();
+            file.close().await.unwrap();
         }));
     }
-    futures::future::join_all(tasks).await;
+    for result in futures::future::join_all(tasks).await {
+        result.unwrap();
+    }
     for i in 0..FILE_COUNT {
         sftp.remove_file(format!("bench_{i}")).await.unwrap();
     }
@@ -68,6 +74,7 @@ async fn upload_many(sftp: &SftpSession, data: Arc<Vec<u8>>) {
 async fn upload_single(sftp: &SftpSession, data: Arc<Vec<u8>>) {
     let mut file = sftp.create("bench_single").await.unwrap();
     file.write_all(&data).await.unwrap();
+    file.close().await.unwrap();
     sftp.remove_file("bench_single").await.unwrap();
 }
 

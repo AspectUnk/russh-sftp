@@ -22,24 +22,24 @@ tokio-util = { version = "0.7.19", default-features = false, features = ["rt"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_bytes = "0.11.19"
 bitflags = { version = "2.13.1", features = ["serde"] }
-async-trait = { version = "0.1.91", optional = true }
+async-trait = { version = "0.1.92", optional = true }
 
-thiserror = "2.0.19"
+thiserror = "2.0.20"
 chrono = "0.4.45"
 bytes = "1.12.1"
-log = "0.4.33"
+log = "0.4.34"
 dashmap = "6.2.1"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-wasm-bindgen-futures = "0.4.76"
+wasm-bindgen-futures = "0.4.78"
 gloo-timers = { version = "0.4.0", features = ["futures"] }
 
 [dev-dependencies]
-russh = "0.62.5"
+russh = "0.63.2"
 env_logger = "0.11.11"
 anyhow = "1.0.104"
 criterion = { version = "0.8.2", features = ["async_tokio"] }
-futures = "0.3.33"
+futures = "0.3.34"
 rand = "0.10.2"
 
 [features]

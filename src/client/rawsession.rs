@@ -1,10 +1,13 @@
 use bytes::Bytes;
 use dashmap::DashMap as HashMap;
 use std::{
+    future::Future,
+    pin::Pin,
     sync::{
         atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
+    task::{ready, Context, Poll},
     time::Duration,
 };
 use tokio::{
@@ -24,11 +27,46 @@ use crate::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
         Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
         Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
+        WriteRef,
     },
 };
 
 pub type SftpResult<T> = Result<T, Error>;
 type SharedRequests = HashMap<Option<u32>, oneshot::Sender<SftpResult<Packet>>>;
+
+pub(crate) struct Request {
+    id: Option<u32>,
+    requests: Arc<SharedRequests>,
+    response: oneshot::Receiver<SftpResult<Packet>>,
+    timeout: Pin<Box<dyn Future<Output = SftpResult<()>> + Send + Sync>>,
+    completed: bool,
+}
+
+impl Future for Request {
+    type Output = SftpResult<Packet>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        if let Poll::Ready(result) = Pin::new(&mut self.response).poll(cx) {
+            self.completed = true;
+            return Poll::Ready(
+                result.unwrap_or_else(|_| Err(Error::UnexpectedBehavior("sender dropped".into()))),
+            );
+        }
+
+        let _ = ready!(self.timeout.as_mut().poll(cx));
+        self.requests.remove(&self.id);
+        self.completed = true;
+        Poll::Ready(Err(Error::Timeout))
+    }
+}
+
+impl Drop for Request {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.requests.remove(&self.id);
+        }
+    }
+}
 
 pub(crate) struct SessionInner {
     version: Option<u32>,
@@ -52,10 +90,23 @@ impl SessionInner {
             return validate;
         }
 
+        // Reads may have been cancelled by seek, a short reply or a timeout.
+        if id.is_some() {
+            debug!("ignoring reply for completed or cancelled request {:?}", id);
+            return Ok(());
+        }
+
         Err(Error::UnexpectedBehavior(format!(
             "Packet {:?} for unknown recipient",
             id
         )))
+    }
+}
+
+impl Drop for SessionInner {
+    fn drop(&mut self) {
+        // Wake pending requests when the transport stops.
+        self.requests.clear();
     }
 }
 
@@ -185,16 +236,14 @@ impl RawSftpSession {
         self.limits = limits;
     }
 
-    fn send(
-        &self,
-        id: Option<u32>,
-        packet: Packet,
-    ) -> SftpResult<oneshot::Receiver<SftpResult<Packet>>> {
+    fn send(&self, id: Option<u32>, packet: Packet) -> SftpResult<Request> {
+        self.send_bytes(id, Bytes::try_from(packet)?)
+    }
+
+    fn send_bytes(&self, id: Option<u32>, bytes: Bytes) -> SftpResult<Request> {
         if self.tx.is_closed() {
             return Err(Error::UnexpectedBehavior("session closed".into()));
         }
-
-        let bytes = Bytes::try_from(packet)?;
 
         if let Some(max_len) = self.limits.packet_len {
             if bytes.len() as u64 > max_len {
@@ -203,24 +252,23 @@ impl RawSftpSession {
         }
 
         let (tx, rx) = oneshot::channel();
+        let timeout = Duration::from_secs(self.timeout.load(Ordering::Relaxed));
+        let timeout = runtime::timeout(timeout, std::future::pending());
+        let request = Request {
+            id,
+            requests: self.requests.clone(),
+            response: rx,
+            timeout: Box::pin(timeout),
+            completed: false,
+        };
         self.requests.insert(id, tx);
         self.tx.send(bytes)?;
 
-        Ok(rx)
+        Ok(request)
     }
 
     async fn request(&self, id: Option<u32>, packet: Packet) -> SftpResult<Packet> {
-        let rx = self.send(id, packet)?;
-        let timeout = self.timeout.load(Ordering::Relaxed);
-
-        match runtime::timeout(Duration::from_secs(timeout), rx).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(_)) => Err(Error::UnexpectedBehavior("sender dropped".into())),
-            Err(error) => {
-                self.requests.remove(&id);
-                Err(error)
-            }
-        }
+        self.send(id, packet)?.await
     }
 
     fn use_next_id(&self) -> u32 {
@@ -314,10 +362,7 @@ impl RawSftpSession {
     }
 
     /// Sends a close packet without awaiting the server's acknowledgement.
-    pub(crate) fn close_nowait(
-        &self,
-        handle: String,
-    ) -> SftpResult<oneshot::Receiver<SftpResult<Packet>>> {
+    pub(crate) fn close_nowait(&self, handle: String) -> SftpResult<Request> {
         let id = self.use_next_id();
         self.send(Some(id), Close { id, handle }.into())
     }
@@ -376,25 +421,46 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    /// Sends a write packet without awaiting the server's acknowledgement.
-    pub(crate) fn write_nowait(
+    /// Sends a borrowed write without awaiting the server's acknowledgement.
+    pub(crate) fn write_nowait_from_slice(
         &self,
-        handle: String,
+        handle: &str,
         offset: u64,
-        data: Vec<u8>,
-    ) -> SftpResult<oneshot::Receiver<SftpResult<Packet>>> {
-        if self.limits.write_len.is_some_and(|w| data.len() as u64 > w) {
+        data: &[u8],
+    ) -> SftpResult<Request> {
+        if self
+            .limits
+            .write_len
+            .is_some_and(|limit| data.len() as u64 > limit)
+        {
             return Err(Error::Limited("write limit reached".to_owned()));
+        }
+
+        let id = self.use_next_id();
+        self.send_bytes(
+            Some(id),
+            Bytes::try_from(WriteRef {
+                id,
+                handle,
+                offset,
+                data,
+            })?,
+        )
+    }
+
+    pub(crate) fn read_nowait(&self, handle: &str, offset: u64, len: u32) -> SftpResult<Request> {
+        if self.limits.read_len.is_some_and(|limit| len as u64 > limit) {
+            return Err(Error::Limited("read limit reached".to_owned()));
         }
 
         let id = self.use_next_id();
         self.send(
             Some(id),
-            Write {
+            Read {
                 id,
-                handle,
+                handle: handle.to_owned(),
                 offset,
-                data,
+                len,
             }
             .into(),
         )

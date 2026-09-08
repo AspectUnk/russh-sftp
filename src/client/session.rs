@@ -20,7 +20,9 @@ pub(crate) struct Features {
     pub statvfs: bool,
     pub expand_path: bool,
     pub limits: Option<Limits>,
+    pub max_concurrent_reads: usize,
     pub max_concurrent_writes: usize,
+    pub max_write_packet_len: u32,
     pub max_packet_len: u32,
 }
 
@@ -45,7 +47,9 @@ impl SftpSession {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        let max_concurrent_writes = cfg.max_concurrent_writes;
+        let max_concurrent_reads = cfg.max_concurrent_reads.max(1);
+        let max_concurrent_writes = cfg.max_concurrent_writes.max(1);
+        let max_write_packet_len = cfg.max_write_packet_len;
         let max_packet_len = cfg.max_packet_len;
         let mut session = RawSftpSession::new_with_config(stream, cfg);
 
@@ -58,7 +62,9 @@ impl SftpSession {
             statvfs: has_extension(extensions::STATVFS, "2"),
             expand_path: has_extension(extensions::EXPAND_PATH, "1"),
             limits: None,
+            max_concurrent_reads,
             max_concurrent_writes,
+            max_write_packet_len,
             max_packet_len,
         };
 
@@ -148,6 +154,7 @@ impl SftpSession {
         let mut buffer = Vec::new();
 
         file.read_to_end(&mut buffer).await?;
+        file.close().await?;
 
         Ok(buffer)
     }
@@ -156,6 +163,7 @@ impl SftpSession {
     pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
         let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
         file.write_all(data).await?;
+        file.close().await?;
         Ok(())
     }
 
