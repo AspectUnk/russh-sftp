@@ -330,42 +330,22 @@ impl RawSftpSession {
     }
 
     pub async fn close<H: Into<String>>(&self, handle: H) -> SftpResult<Status> {
-        let id = self.use_next_id();
-        let result = self
-            .request(
-                Some(id),
-                Close {
-                    id,
-                    handle: handle.into(),
-                }
-                .into(),
-            )
-            .await?;
-
-        if let Packet::Status(status) = &result {
-            if status.status_code == StatusCode::Ok
-                && self
-                    .handles
-                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |h| {
-                        if h > 0 {
-                            Some(h - 1)
-                        } else {
-                            None
-                        }
-                    })
-                    .is_err()
-            {
-                warn!("attempt to close more handles than exist");
-            }
-        }
-
+        let result = self.close_nowait(handle.into())?.await?;
         into_status!(result)
     }
 
     /// Sends a close packet without awaiting the server's acknowledgement.
     pub(crate) fn close_nowait(&self, handle: String) -> SftpResult<Request> {
         let id = self.use_next_id();
-        self.send(Some(id), Close { id, handle }.into())
+        let request = self.send(Some(id), Close { id, handle }.into())?;
+        if self
+            .handles
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |h| h.checked_sub(1))
+            .is_err()
+        {
+            warn!("attempt to close more handles than exist");
+        }
+        Ok(request)
     }
 
     pub async fn read<H: Into<String>>(

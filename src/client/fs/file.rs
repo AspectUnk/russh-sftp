@@ -451,29 +451,30 @@ impl AsyncWrite for File {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Result<(), io::Error>> {
-        if self.closed {
-            return Poll::Ready(Ok(()));
-        }
-
-        ready!(poll_drain_writes(&mut self.state.write_acks, cx))?;
-
         let poll = Pin::new(match self.state.f_shutdown.as_mut() {
             Some(f) => f,
             None => {
-                let session = self.session.clone();
-                let file_handle = self.handle.clone();
+                if self.closed {
+                    return Poll::Ready(Ok(()));
+                }
 
-                self.state.f_shutdown.get_or_insert(Box::pin(async move {
-                    session.close(file_handle).await.map_err(io::Error::from)?;
-                    Ok(())
-                }))
+                ready!(poll_drain_writes(&mut self.state.write_acks, cx))?;
+
+                let request = self
+                    .session
+                    .close_nowait(self.handle.clone())
+                    .map_err(io::Error::from)?;
+                // The handle is invalid once CLOSE is sent, even if its reply is lost.
+                self.closed = true;
+                self.state
+                    .f_shutdown
+                    .get_or_insert(Box::pin(async move { check_write_result(request.await) }))
             }
         })
         .poll(cx);
 
         if poll.is_ready() {
             self.state.f_shutdown = None;
-            self.closed = matches!(&poll, Poll::Ready(Ok(())));
         }
 
         poll
