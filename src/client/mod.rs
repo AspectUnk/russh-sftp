@@ -72,18 +72,27 @@ where
     }
 }
 
-async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
+async fn process_handler<S, H>(stream: &mut S, handler: &mut H, cfg: &Config) -> Result<(), Error>
 where
     S: AsyncRead + Unpin,
     H: Handler + Send,
 {
-    let mut bytes = read_packet(stream, u32::MAX).await?;
+    let mut bytes = read_packet(stream, cfg.max_packet_len).await?;
     Ok(execute_handler(&mut bytes, handler).await?)
 }
 
 /// Run processing stream as SFTP client. Is a simple handler of incoming
 /// and outgoing packets. Can be used for non-standard implementations
-pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<Bytes>
+pub fn run<S, H>(stream: S, handler: H) -> mpsc::UnboundedSender<Bytes>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    H: Handler + Send + 'static,
+{
+    run_with_config(stream, handler, Config::default())
+}
+
+/// Run processing stream as SFTP client with custom configuration
+pub fn run_with_config<S, H>(stream: S, mut handler: H, cfg: Config) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
@@ -97,7 +106,7 @@ where
         runtime::spawn(async move {
             loop {
                 select! {
-                    result = process_handler(&mut rd, &mut handler) => {
+                    result = process_handler(&mut rd, &mut handler, &cfg) => {
                         match result {
                             Err(Error::UnexpectedEof) => break,
                             Err(err) => {

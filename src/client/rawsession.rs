@@ -17,7 +17,7 @@ use tokio::{
 
 use super::{error::Error, runtime, Handler};
 use crate::{
-    client::{run, Config},
+    client::{run_with_config, Config},
     de,
     extensions::{
         self, ExpandPathExtension, FsyncExtension, HardlinkExtension, LimitsExtension, Statvfs,
@@ -214,13 +214,14 @@ impl RawSftpSession {
             version: None,
             requests: req_map.clone(),
         };
+        let timeout = AtomicU64::new(cfg.request_timeout_secs);
 
         Self {
-            tx: run(stream, inner),
+            tx: run_with_config(stream, inner, cfg),
             requests: req_map,
             next_req_id: AtomicU32::new(1),
             handles: AtomicU64::new(0),
-            timeout: AtomicU64::new(cfg.request_timeout_secs),
+            timeout,
             limits: Limits::default(),
         }
     }
