@@ -44,7 +44,7 @@ impl File {
         let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_secs(mtime as u64));
         let now = Utc::now().timestamp();
         let age = now - (mtime as i64);
-        let delayed = if age > SIX_MONTHS || age < 0 {
+        let delayed = if !(0..=SIX_MONTHS).contains(&age) {
             datetime.format("%b %e  %Y").to_string()
         } else {
             datetime.format("%b %e %H:%M").to_string()
