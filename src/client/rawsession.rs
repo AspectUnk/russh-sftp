@@ -34,7 +34,11 @@ use crate::{
 pub type SftpResult<T> = Result<T, Error>;
 type SharedRequests = HashMap<Option<u32>, oneshot::Sender<SftpResult<Packet>>>;
 
-pub(crate) struct Request {
+/// A pending SFTP request handle returned by the non-awaiting session
+/// methods. Awaiting it yields the server's reply packet, or `Error::Timeout`
+/// when the session's response timeout elapses first. Dropping a `Request`
+/// before it completes deregisters it, so its reply is discarded.
+pub struct Request {
     id: Option<u32>,
     requests: Arc<SharedRequests>,
     response: oneshot::Receiver<SftpResult<Packet>>,
@@ -403,7 +407,13 @@ impl RawSftpSession {
     }
 
     /// Sends a borrowed write without awaiting the server's acknowledgement.
-    pub(crate) fn write_nowait_from_slice(
+    ///
+    /// Unlike [`RawSftpSession::write`], this serializes the frame directly
+    /// from `data` instead of requiring an owned buffer, and returns
+    /// immediately instead of awaiting the reply. Keep the returned
+    /// [`Request`] and await it (along with the others like it) once the
+    /// pipeline is full to collect the server's `SSH_FXP_STATUS` replies.
+    pub fn write_nowait_from_slice(
         &self,
         handle: &str,
         offset: u64,

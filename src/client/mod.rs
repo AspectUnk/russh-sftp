@@ -7,6 +7,7 @@ mod session;
 
 pub use handler::Handler;
 pub use rawsession::RawSftpSession;
+pub use rawsession::Request;
 pub use session::SftpSession;
 
 use bytes::Bytes;
