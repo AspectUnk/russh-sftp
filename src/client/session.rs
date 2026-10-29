@@ -186,14 +186,7 @@ impl SftpSession {
 
         loop {
             match self.session.readdir(handle.as_str()).await {
-                Ok(name) => {
-                    files = name
-                        .files
-                        .into_iter()
-                        .map(|f| (f.filename, f.attrs))
-                        .chain(files)
-                        .collect();
-                }
+                Ok(name) => files.extend(name.files.into_iter().map(|f| (f.filename, f.attrs))),
                 Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
                 Err(err) => return Err(err),
             }
@@ -296,5 +289,91 @@ impl SftpSession {
             Some(file) => Ok(Some(file.filename.to_owned())),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::{
+        protocol::{File as ProtocolFile, Handle, Name, Status, Version},
+        server,
+    };
+
+    /// Lists `entries` names in batches of `batch` per READDIR, like OpenSSH's sftp-server.
+    struct Directory {
+        entries: usize,
+        batch: usize,
+        sent: usize,
+    }
+
+    impl server::Handler for Directory {
+        type Error = StatusCode;
+
+        fn unimplemented(&self) -> Self::Error {
+            StatusCode::OpUnsupported
+        }
+
+        async fn init(
+            &mut self,
+            _version: u32,
+            _extensions: HashMap<String, String>,
+        ) -> Result<Version, Self::Error> {
+            Ok(Version::new())
+        }
+
+        async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
+            Ok(Handle { id, handle: path })
+        }
+
+        async fn readdir(&mut self, id: u32, _handle: String) -> Result<Name, Self::Error> {
+            if self.sent == self.entries {
+                return Err(StatusCode::Eof);
+            }
+            let end = (self.sent + self.batch).min(self.entries);
+            let files = (self.sent..end)
+                .map(|i| ProtocolFile::dummy(i.to_string()))
+                .collect();
+            self.sent = end;
+            Ok(Name { id, files })
+        }
+
+        async fn close(&mut self, id: u32, _handle: String) -> Result<Status, Self::Error> {
+            Ok(Status {
+                id,
+                status_code: StatusCode::Ok,
+                error_message: "Ok".to_string(),
+                language_tag: "en-US".to_string(),
+            })
+        }
+    }
+
+    async fn session(entries: usize, batch: usize) -> SftpSession {
+        let (client, server) = tokio::io::duplex(64 * 1024);
+        server::run(
+            server,
+            Directory {
+                entries,
+                batch,
+                sent: 0,
+            },
+        )
+        .await;
+        SftpSession::new(client).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn read_dir_keeps_the_server_order() {
+        let sftp = session(10, 3).await;
+        let names: Vec<_> = sftp
+            .read_dir("/")
+            .await
+            .unwrap()
+            .map(|e| e.file_name())
+            .collect();
+        let expected: Vec<_> = (0..10).map(|i| i.to_string()).collect();
+        assert_eq!(names, expected);
     }
 }
