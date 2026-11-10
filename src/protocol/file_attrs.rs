@@ -403,7 +403,7 @@ impl<'de> Deserialize<'de> for FileAttributes {
             {
                 let attrs = FileAttr::from_bits_truncate(seq.next_element::<u32>()?.unwrap_or(0));
 
-                Ok(FileAttributes {
+                let file_attrs = FileAttributes {
                     size: if attrs.contains(FileAttr::SIZE) {
                         seq.next_element::<u64>()?
                     } else {
@@ -436,10 +436,66 @@ impl<'de> Deserialize<'de> for FileAttributes {
                     } else {
                         None
                     },
-                })
+                };
+
+                // Extended pairs are not exposed, but must be consumed so that
+                // whatever follows (e.g. the next NAME entry) is read from the right offset.
+                if attrs.contains(FileAttr::EXTENDED) {
+                    let count = seq.next_element::<u32>()?.unwrap_or(0);
+                    for _ in 0..count {
+                        seq.next_element::<String>()?;
+                        seq.next_element::<String>()?;
+                    }
+                }
+
+                Ok(file_attrs)
             }
         }
 
         deserializer.deserialize_any(FileAttributesVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::{BufMut, BytesMut};
+
+    use crate::protocol::Packet;
+
+    fn put_str(buf: &mut BytesMut, s: &str) {
+        buf.put_u32(s.len() as u32);
+        buf.put_slice(s.as_bytes());
+    }
+
+    #[test]
+    fn extended_attrs_are_skipped() {
+        let mut wire = BytesMut::new();
+        wire.put_u8(104); // NAME
+        wire.put_u32(1);
+        wire.put_u32(2);
+
+        put_str(&mut wire, "a");
+        put_str(&mut wire, "");
+        wire.put_u32(0x8000_0001); // EXTENDED | SIZE
+        wire.put_u64(10);
+        wire.put_u32(2);
+        for s in ["k1", "v1", "k2", "v2"] {
+            put_str(&mut wire, s);
+        }
+
+        put_str(&mut wire, "b");
+        put_str(&mut wire, "");
+        wire.put_u32(0x1); // SIZE
+        wire.put_u64(20);
+
+        let Packet::Name(name) = Packet::try_from(&mut wire.freeze()).unwrap() else {
+            panic!("expected NAME");
+        };
+        let files: Vec<_> = name
+            .files
+            .iter()
+            .map(|f| (f.filename.as_str(), f.attrs.size))
+            .collect();
+        assert_eq!(files, [("a", Some(10)), ("b", Some(20))]);
     }
 }
