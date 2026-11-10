@@ -192,7 +192,10 @@ impl SftpSession {
             match self.session.readdir(handle.as_str()).await {
                 Ok(name) => files.extend(name.files.into_iter().map(|f| (f.filename, f.attrs))),
                 Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
-                Err(err) => return Err(err),
+                Err(err) => {
+                    let _ = self.session.close(handle).await;
+                    return Err(err);
+                }
             }
         }
 

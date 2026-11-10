@@ -44,6 +44,8 @@ impl ReadState {
         self.pos = 0;
         self.offset = offset;
         self.eof = false;
+        // A short read near EOF must not cap chunk sizes for later reads elsewhere.
+        self.chunk_len = None;
     }
 
     fn poll_read(
