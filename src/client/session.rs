@@ -159,9 +159,10 @@ impl SftpSession {
         Ok(buffer)
     }
 
-    /// Writes the contents to a file whose path is specified.
+    /// Writes `data` as the entire contents of a file, creating it if it does not exist
+    /// and truncating it if it does. Same as [`std::fs::write`].
     pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
-        let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
+        let mut file = self.create(path).await?;
         file.write_all(data).await?;
         file.close().await?;
         Ok(())
