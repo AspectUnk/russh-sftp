@@ -34,7 +34,7 @@ Median throughput over six runs against OpenSSH in Docker (tmpfs), using the sam
 - [x] Server side
 - [x] Simple server example
 - [ ] Full server example
-- [x] Extension support: `limits@openssh.com`, `hardlink@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`, `expand-path@openssh.com`
+- [x] Extension support: `limits@openssh.com`, `hardlink@openssh.com`, `posix-rename@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`, `expand-path@openssh.com`
 - [ ] Unit tests
 - [x] Workflow
 
