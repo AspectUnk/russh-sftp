@@ -10,7 +10,7 @@ use super::{
 use crate::{
     client::Config,
     extensions::{self, Statvfs},
-    protocol::{FileAttributes, OpenFlags, StatusCode},
+    protocol::{FileAttributes, OpenFlags, Status, StatusCode},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -285,17 +285,21 @@ impl SftpSession {
     ///
     /// Unlike [`SftpSession::rename`], which on OpenSSH fails when the target exists,
     /// this uses `posix-rename@openssh.com` and has POSIX `rename(2)` semantics.
-    /// Returns [`Error::UnexpectedBehavior`] without sending anything if the server
-    /// does not advertise the extension; check [`SftpSession::supports_posix_rename`].
+    /// Returns [`Error::Status`] with [`StatusCode::OpUnsupported`] without sending
+    /// anything if the server does not advertise the extension; check
+    /// [`SftpSession::supports_posix_rename`].
     pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
     where
         O: Into<String>,
         N: Into<String>,
     {
         if !self.features.posix_rename {
-            return Err(Error::UnexpectedBehavior(
-                "server does not support posix-rename@openssh.com".into(),
-            ));
+            return Err(Error::Status(Status {
+                id: 0,
+                status_code: StatusCode::OpUnsupported,
+                error_message: "server does not support posix-rename@openssh.com".into(),
+                language_tag: "en-US".into(),
+            }));
         }
 
         self.session
@@ -339,7 +343,7 @@ mod tests {
     use super::*;
     use crate::{
         extensions::PosixRenameExtension,
-        protocol::{Extended, Handle, Packet, Status, Version},
+        protocol::{Extended, Handle, Packet, Version},
     };
 
     #[derive(Clone, Copy)]
@@ -416,6 +420,14 @@ mod tests {
         (SftpSession::new(client).await.unwrap(), server)
     }
 
+    /// Waits for the server task, failing instead of hanging if the stream stays open.
+    async fn finish(server: tokio::task::JoinHandle<Vec<Bytes>>) -> Vec<Bytes> {
+        tokio::time::timeout(std::time::Duration::from_secs(5), server)
+            .await
+            .expect("server did not shut down")
+            .unwrap()
+    }
+
     const ADVERTISED: &[(&str, &str)] = &[(extensions::POSIX_RENAME, "1")];
 
     fn sftp_string(s: &str) -> Vec<u8> {
@@ -458,7 +470,7 @@ mod tests {
         sftp.posix_rename("from", "to").await.unwrap();
         drop(sftp);
 
-        let sent = server.await.unwrap();
+        let sent = finish(server).await;
         assert_eq!(sent.len(), 1);
         let mut body = sent[0].clone();
         assert_eq!(body.get_u8(), 200);
@@ -500,12 +512,14 @@ mod tests {
         for extensions in [&[][..], &[(extensions::POSIX_RENAME, "2")][..]] {
             let (sftp, server) = session_with(extensions, Reply::Status(StatusCode::Ok)).await;
             assert!(!sftp.supports_posix_rename());
-            assert!(matches!(
-                sftp.posix_rename("from", "to").await,
-                Err(Error::UnexpectedBehavior(_))
-            ));
+            match sftp.posix_rename("from", "to").await {
+                Err(Error::Status(status)) => {
+                    assert_eq!(status.status_code, StatusCode::OpUnsupported)
+                }
+                other => panic!("expected OpUnsupported, got {other:?}"),
+            }
             drop(sftp);
-            assert!(server.await.unwrap().is_empty());
+            assert!(finish(server).await.is_empty());
         }
     }
 }
