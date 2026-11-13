@@ -16,6 +16,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Features {
     pub hardlink: bool,
+    pub posix_rename: bool,
     pub fsync: bool,
     pub statvfs: bool,
     pub expand_path: bool,
@@ -58,6 +59,7 @@ impl SftpSession {
 
         let mut features = Features {
             hardlink: has_extension(extensions::HARDLINK, "1"),
+            posix_rename: has_extension(extensions::POSIX_RENAME, "1"),
             fsync: has_extension(extensions::FSYNC, "1"),
             statvfs: has_extension(extensions::STATVFS, "2"),
             expand_path: has_extension(extensions::EXPAND_PATH, "1"),
@@ -274,6 +276,34 @@ impl SftpSession {
         self.session.hardlink(oldpath, newpath).await.map(|_| true)
     }
 
+    /// Whether the server advertises `posix-rename@openssh.com` version 1.
+    pub fn supports_posix_rename(&self) -> bool {
+        self.features.posix_rename
+    }
+
+    /// Renames `oldpath` to `newpath`, atomically replacing `newpath` if it exists.
+    ///
+    /// Unlike [`SftpSession::rename`], which on OpenSSH fails when the target exists,
+    /// this uses `posix-rename@openssh.com` and has POSIX `rename(2)` semantics.
+    /// Returns [`Error::UnexpectedBehavior`] without sending anything if the server
+    /// does not advertise the extension; check [`SftpSession::supports_posix_rename`].
+    pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
+    where
+        O: Into<String>,
+        N: Into<String>,
+    {
+        if !self.features.posix_rename {
+            return Err(Error::UnexpectedBehavior(
+                "server does not support posix-rename@openssh.com".into(),
+            ));
+        }
+
+        self.session
+            .posix_rename(oldpath, newpath)
+            .await
+            .map(|_| ())
+    }
+
     /// Performs a statvfs on the remote file system path.
     /// Returns `Ok(None)` if the remote SFTP server does not support `statvfs@openssh.com` extension v2.
     pub async fn fs_info<P: Into<String>>(&self, path: P) -> SftpResult<Option<Statvfs>> {
@@ -295,6 +325,187 @@ impl SftpSession {
         match name.files.first() {
             Some(file) => Ok(Some(file.filename.to_owned())),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use bytes::{Buf, Bytes};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, DuplexStream};
+
+    use super::*;
+    use crate::{
+        extensions::PosixRenameExtension,
+        protocol::{Extended, Handle, Packet, Status, Version},
+    };
+
+    #[derive(Clone, Copy)]
+    enum Reply {
+        Status(StatusCode),
+        Handle,
+    }
+
+    async fn read_packet(stream: &mut DuplexStream) -> Option<Bytes> {
+        let len = stream.read_u32().await.ok()?;
+        let mut buf = vec![0; len as usize];
+        stream.read_exact(&mut buf).await.ok()?;
+        Some(Bytes::from(buf))
+    }
+
+    async fn write_packet(stream: &mut DuplexStream, packet: Packet) {
+        let bytes = Bytes::try_from(packet).unwrap();
+        stream.write_all(&bytes).await.unwrap();
+    }
+
+    /// Minimal server: answers INIT with the given extensions and every EXTENDED
+    /// request with `reply`. Returns the raw bodies of all EXTENDED packets received.
+    fn spawn_server(
+        mut stream: DuplexStream,
+        extensions: &[(&str, &str)],
+        reply: Reply,
+    ) -> tokio::task::JoinHandle<Vec<Bytes>> {
+        let extensions: HashMap<String, String> = extensions
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        tokio::spawn(async move {
+            let mut extended = Vec::new();
+            while let Some(raw) = read_packet(&mut stream).await {
+                match Packet::try_from(&mut raw.clone()).unwrap() {
+                    Packet::Init(_) => {
+                        let version = Version {
+                            extensions: extensions.clone(),
+                            ..Version::new()
+                        };
+                        write_packet(&mut stream, version.into()).await;
+                    }
+                    Packet::Extended(Extended { id, .. }) => {
+                        extended.push(raw);
+                        let packet = match reply {
+                            Reply::Status(status_code) => Status {
+                                id,
+                                status_code,
+                                error_message: String::new(),
+                                language_tag: "en-US".into(),
+                            }
+                            .into(),
+                            Reply::Handle => Handle {
+                                id,
+                                handle: "h".into(),
+                            }
+                            .into(),
+                        };
+                        write_packet(&mut stream, packet).await;
+                    }
+                    other => panic!("unexpected packet {other:?}"),
+                }
+            }
+            extended
+        })
+    }
+
+    async fn session_with(
+        extensions: &[(&str, &str)],
+        reply: Reply,
+    ) -> (SftpSession, tokio::task::JoinHandle<Vec<Bytes>>) {
+        let (client, server) = tokio::io::duplex(64 * 1024);
+        let server = spawn_server(server, extensions, reply);
+        (SftpSession::new(client).await.unwrap(), server)
+    }
+
+    const ADVERTISED: &[(&str, &str)] = &[(extensions::POSIX_RENAME, "1")];
+
+    fn sftp_string(s: &str) -> Vec<u8> {
+        let mut out = (s.len() as u32).to_be_bytes().to_vec();
+        out.extend_from_slice(s.as_bytes());
+        out
+    }
+
+    #[test]
+    fn posix_rename_extension_wire_encoding() {
+        let data: Vec<u8> = PosixRenameExtension {
+            oldpath: "a/old".into(),
+            newpath: "new".into(),
+        }
+        .try_into()
+        .unwrap();
+        assert_eq!(data, [sftp_string("a/old"), sftp_string("new")].concat());
+
+        let packet = Bytes::try_from(Packet::Extended(Extended {
+            id: 7,
+            request: extensions::POSIX_RENAME.into(),
+            data: data.clone(),
+        }))
+        .unwrap();
+        let body = [
+            vec![200],
+            7u32.to_be_bytes().to_vec(),
+            sftp_string("posix-rename@openssh.com"),
+            data,
+        ]
+        .concat();
+        let expected = [(body.len() as u32).to_be_bytes().to_vec(), body].concat();
+        assert_eq!(packet.as_ref(), expected.as_slice());
+    }
+
+    #[tokio::test]
+    async fn posix_rename_sends_extended_request() {
+        let (sftp, server) = session_with(ADVERTISED, Reply::Status(StatusCode::Ok)).await;
+        assert!(sftp.supports_posix_rename());
+        sftp.posix_rename("from", "to").await.unwrap();
+        drop(sftp);
+
+        let sent = server.await.unwrap();
+        assert_eq!(sent.len(), 1);
+        let mut body = sent[0].clone();
+        assert_eq!(body.get_u8(), 200);
+        let _id = body.get_u32();
+        assert_eq!(
+            body.as_ref(),
+            [
+                sftp_string("posix-rename@openssh.com"),
+                sftp_string("from"),
+                sftp_string("to")
+            ]
+            .concat()
+            .as_slice()
+        );
+    }
+
+    #[tokio::test]
+    async fn posix_rename_maps_error_statuses() {
+        for code in [StatusCode::Failure, StatusCode::OpUnsupported] {
+            let (sftp, _server) = session_with(ADVERTISED, Reply::Status(code)).await;
+            match sftp.posix_rename("from", "to").await {
+                Err(Error::Status(status)) => assert_eq!(status.status_code, code),
+                other => panic!("expected status error for {code:?}, got {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn posix_rename_rejects_non_status_reply() {
+        let (sftp, _server) = session_with(ADVERTISED, Reply::Handle).await;
+        assert!(matches!(
+            sftp.posix_rename("from", "to").await,
+            Err(Error::UnexpectedPacket)
+        ));
+    }
+
+    #[tokio::test]
+    async fn posix_rename_unadvertised_sends_nothing() {
+        for extensions in [&[][..], &[(extensions::POSIX_RENAME, "2")][..]] {
+            let (sftp, server) = session_with(extensions, Reply::Status(StatusCode::Ok)).await;
+            assert!(!sftp.supports_posix_rename());
+            assert!(matches!(
+                sftp.posix_rename("from", "to").await,
+                Err(Error::UnexpectedBehavior(_))
+            ));
+            drop(sftp);
+            assert!(server.await.unwrap().is_empty());
         }
     }
 }
