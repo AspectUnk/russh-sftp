@@ -352,13 +352,25 @@ impl RawSftpSession {
     pub(crate) fn close_nowait(&self, handle: String) -> SftpResult<Request> {
         let id = self.use_next_id();
         let request = self.send(Some(id), Close { id, handle }.into())?;
-        if self
-            .handles
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |h| h.checked_sub(1))
-            .is_err()
-        {
-            warn!("attempt to close more handles than exist");
+
+        let mut handles = self.handles.load(Ordering::SeqCst);
+        loop {
+            let Some(new) = handles.checked_sub(1) else {
+                warn!("attempt to close more handles than exist");
+                break;
+            };
+
+            match self.handles.compare_exchange_weak(
+                handles,
+                new,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(current) => handles = current,
+            }
         }
+
         Ok(request)
     }
 
