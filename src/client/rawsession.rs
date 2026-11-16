@@ -106,8 +106,7 @@ impl SessionInner {
 
 impl Drop for SessionInner {
     fn drop(&mut self) {
-        // Wake pending requests when the transport stops, and refuse new ones:
-        // no reply can arrive after this.
+        // Wake pending requests when the transport stops and refuse new ones.
         self.closed.store(true, Ordering::SeqCst);
         self.requests.clear();
     }
@@ -284,13 +283,13 @@ impl RawSftpSession {
             completed: false,
         };
         self.requests.insert(id, tx);
-        // The read half may have stopped while the write half is still
-        // running: nothing would answer or wake this request. Checked after
-        // the insert, so a stop that comes later wakes it instead. Dropping
-        // `request` removes the entry.
+
+        // The write half may outlive the read half. Checked after the insert,
+        // so a stop that comes later wakes the request instead.
         if self.closed.load(Ordering::SeqCst) {
             return Err(Error::UnexpectedBehavior("session closed".into()));
         }
+
         self.tx.send(bytes)?;
 
         Ok(request)
@@ -858,40 +857,29 @@ impl Drop for RawSftpSession {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
-    use tokio::io::AsyncWriteExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
     use crate::utils::read_packet;
 
     #[tokio::test]
-    async fn request_after_read_half_ends_fails_fast() {
+    async fn request_after_read_half_stops_fails() {
         let (client, mut server) = tokio::io::duplex(64);
-        let cfg = Config {
-            request_timeout_secs: 5,
-            ..Default::default()
-        };
-        let session = Arc::new(RawSftpSession::new_with_config(client, cfg));
+        let session = RawSftpSession::new(client);
+        session.set_timeout(1);
 
-        // The server never reads, so this write keeps the writer task busy.
-        let write = tokio::spawn({
-            let session = session.clone();
-            async move { session.write("handle", 0, vec![0; 64 * 1024]).await }
-        });
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        // The rest is never read, so the write half stays busy with this packet.
+        let pending = session.write_nowait("handle", 0, &[0; 1024]).unwrap();
+        server.read_exact(&mut [0; 64]).await.unwrap();
 
-        // The server ends its side: the read half sees EOF and stops.
+        // The read half sees EOF and stops, waking the pending request.
         server.shutdown().await.unwrap();
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(pending.await.is_err());
 
-        // Nothing can answer this request any more.
-        let started = Instant::now();
-        let result = session.close("handle").await;
-        let elapsed = started.elapsed();
-        assert!(result.is_err());
-        assert!(elapsed < Duration::from_secs(1), "took {elapsed:?}");
-
-        assert!(write.await.unwrap().is_err());
+        assert!(matches!(
+            session.stat("file").await,
+            Err(Error::UnexpectedBehavior(_))
+        ));
     }
 
     #[tokio::test]
