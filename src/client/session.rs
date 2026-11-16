@@ -159,8 +159,9 @@ impl SftpSession {
         Ok(buffer)
     }
 
-    /// Writes `data` as the entire contents of a file, creating it if it does not exist
-    /// and truncating it if it does. Same as [`std::fs::write`].
+    /// Writes the contents to a file whose path is specified.
+    ///
+    /// This function will create a file if it does not exist, and will truncate it if it does.
     pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
         let mut file = self.create(path).await?;
         file.write_all(data).await?;
@@ -296,6 +297,7 @@ impl SftpSession {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
+    use tokio::{io::DuplexStream, sync::mpsc};
 
     use super::*;
     use crate::{
@@ -303,35 +305,41 @@ mod tests {
         utils::read_packet,
     };
 
+    /// Answers each client packet with the one returned by `reply`
+    fn serve<F>(mut stream: DuplexStream, mut reply: F)
+    where
+        F: FnMut(Packet) -> Packet + Send + 'static,
+    {
+        tokio::spawn(async move {
+            while let Ok(mut bytes) = read_packet(&mut stream, 1024).await {
+                let packet = reply(Packet::try_from(&mut bytes).unwrap());
+                let bytes = Bytes::try_from(packet).unwrap();
+                stream.write_all(&bytes).await.unwrap();
+            }
+        });
+    }
+
     #[tokio::test]
     async fn read_dir_keeps_server_order() {
-        let (client, mut server) = tokio::io::duplex(1024);
+        let (client, server) = tokio::io::duplex(1024);
+        let mut batches = [vec!["a", "b", "c"], vec!["d", "e"]].into_iter();
 
-        tokio::spawn(async move {
-            let mut batches = [vec!["a", "b", "c"], vec!["d", "e"]].into_iter();
-
-            while let Ok(mut bytes) = read_packet(&mut server, 1024).await {
-                let reply = match Packet::try_from(&mut bytes).unwrap() {
-                    Packet::Init(_) => Version::new().into(),
-                    Packet::OpenDir(opendir) => Handle {
-                        id: opendir.id,
-                        handle: opendir.path,
-                    }
-                    .into(),
-                    Packet::ReadDir(readdir) => match batches.next() {
-                        Some(names) => Name {
-                            id: readdir.id,
-                            files: names.into_iter().map(protocol::File::dummy).collect(),
-                        }
-                        .into(),
-                        None => Packet::error(readdir.id, StatusCode::Eof),
-                    },
-                    packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
-                };
-
-                let reply = Bytes::try_from(reply).unwrap();
-                server.write_all(&reply).await.unwrap();
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::OpenDir(opendir) => Handle {
+                id: opendir.id,
+                handle: opendir.path,
             }
+            .into(),
+            Packet::ReadDir(readdir) => match batches.next() {
+                Some(names) => Name {
+                    id: readdir.id,
+                    files: names.into_iter().map(protocol::File::dummy).collect(),
+                }
+                .into(),
+                None => Packet::error(readdir.id, StatusCode::Eof),
+            },
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
         });
 
         let sftp = SftpSession::new(client).await.unwrap();
@@ -343,5 +351,30 @@ mod tests {
             .collect();
 
         assert_eq!(names, ["a", "b", "c", "d", "e"]);
+    }
+
+    #[tokio::test]
+    async fn write_creates_and_truncates() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::Open(open) => {
+                tx.send(open.pflags).unwrap();
+                Handle {
+                    id: open.id,
+                    handle: open.filename,
+                }
+                .into()
+            }
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        sftp.write("file", b"data").await.unwrap();
+
+        let flags = rx.recv().await.unwrap();
+        assert!(flags.contains(OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE));
     }
 }
