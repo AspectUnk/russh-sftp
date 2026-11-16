@@ -34,11 +34,7 @@ use crate::{
 pub type SftpResult<T> = Result<T, Error>;
 type SharedRequests = HashMap<Option<u32>, oneshot::Sender<SftpResult<Packet>>>;
 
-/// A pending SFTP request handle returned by the non-awaiting session
-/// methods. Awaiting it yields the server's reply packet, or `Error::Timeout`
-/// when the session's response timeout elapses first. Dropping a `Request`
-/// before it completes deregisters it, so its reply is discarded.
-pub struct Request {
+pub(crate) struct Request {
     id: Option<u32>,
     requests: Arc<SharedRequests>,
     response: oneshot::Receiver<SftpResult<Packet>>,
@@ -199,6 +195,20 @@ macro_rules! into_status {
             _ => Err(Error::UnexpectedPacket),
         }
     };
+}
+
+/// Pending acknowledgement of a write sent by [`RawSftpSession::write_nowait`].
+/// Resolves in the same way as [`RawSftpSession::write`].
+/// If dropped before completion the server's reply is discarded
+pub struct PendingWrite(Request);
+
+impl Future for PendingWrite {
+    type Output = SftpResult<Status>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let result = ready!(Pin::new(&mut self.0).poll(cx))?;
+        Poll::Ready(into_status!(result))
+    }
 }
 
 impl RawSftpSession {
@@ -407,13 +417,14 @@ impl RawSftpSession {
     }
 
     /// Sends a borrowed write without awaiting the server's acknowledgement.
-    ///
-    /// Unlike [`RawSftpSession::write`], this serializes the frame directly
-    /// from `data` instead of requiring an owned buffer, and returns
-    /// immediately instead of awaiting the reply. Keep the returned
-    /// [`Request`] and await it (along with the others like it) once the
-    /// pipeline is full to collect the server's `SSH_FXP_STATUS` replies.
-    pub fn write_nowait_from_slice(
+    /// Allows writes to be pipelined without copying the data into an owned buffer
+    pub fn write_nowait(&self, handle: &str, offset: u64, data: &[u8]) -> SftpResult<PendingWrite> {
+        self.write_nowait_from_slice(handle, offset, data)
+            .map(PendingWrite)
+    }
+
+    /// Sends a borrowed write without awaiting the server's acknowledgement.
+    pub(crate) fn write_nowait_from_slice(
         &self,
         handle: &str,
         offset: u64,
@@ -816,5 +827,46 @@ impl RawSftpSession {
 impl Drop for RawSftpSession {
     fn drop(&mut self) {
         let _ = self.close_session();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+    use crate::utils::read_packet;
+
+    #[tokio::test]
+    async fn write_nowait_pipelines_and_maps_status() {
+        let (client, mut server) = tokio::io::duplex(1024);
+        let session = RawSftpSession::new(client);
+
+        let (version, _) = tokio::join!(session.init(), async {
+            read_packet(&mut server, 1024).await.unwrap();
+            let version = Bytes::try_from(Packet::Version(Version::new())).unwrap();
+            server.write_all(&version).await.unwrap();
+        });
+        version.unwrap();
+
+        let accepted = session.write_nowait("handle", 0, b"foo").unwrap();
+        let rejected = session.write_nowait("handle", 3, b"bar").unwrap();
+
+        for (offset, code) in [(0, StatusCode::Ok), (3, StatusCode::Failure)] {
+            let mut bytes = read_packet(&mut server, 1024).await.unwrap();
+            let Packet::Write(write) = Packet::try_from(&mut bytes).unwrap() else {
+                panic!("expected write packet");
+            };
+            assert_eq!(write.offset, offset);
+
+            let status = Bytes::try_from(Packet::error(write.id, code)).unwrap();
+            server.write_all(&status).await.unwrap();
+        }
+
+        assert_eq!(accepted.await.unwrap().status_code, StatusCode::Ok);
+        assert!(matches!(
+            rejected.await,
+            Err(Error::Status(status)) if status.status_code == StatusCode::Failure
+        ));
     }
 }
