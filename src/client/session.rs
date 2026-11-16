@@ -10,7 +10,7 @@ use super::{
 use crate::{
     client::Config,
     extensions::{self, Statvfs},
-    protocol::{FileAttributes, OpenFlags, Status, StatusCode},
+    protocol::{FileAttributes, OpenFlags, StatusCode},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -271,36 +271,21 @@ impl SftpSession {
         self.session.hardlink(oldpath, newpath).await.map(|_| true)
     }
 
-    /// Whether the server advertises `posix-rename@openssh.com` version 1.
-    pub fn supports_posix_rename(&self) -> bool {
-        self.features.posix_rename
-    }
-
-    /// Renames `oldpath` to `newpath`, atomically replacing `newpath` if it exists.
-    ///
-    /// Unlike [`SftpSession::rename`], which on OpenSSH fails when the target exists,
-    /// this uses `posix-rename@openssh.com` and has POSIX `rename(2)` semantics.
-    /// Returns [`Error::Status`] with [`StatusCode::OpUnsupported`] without sending
-    /// anything if the server does not advertise the extension; check
-    /// [`SftpSession::supports_posix_rename`].
-    pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<()>
+    /// Rename a file or directory to a new name, atomically replacing the destination if it exists.
+    /// Returns `Ok(false)` if the remote SFTP server does not support `posix-rename@openssh.com` extension v1.
+    pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<bool>
     where
         O: Into<String>,
         N: Into<String>,
     {
         if !self.features.posix_rename {
-            return Err(Error::Status(Status {
-                id: 0,
-                status_code: StatusCode::OpUnsupported,
-                error_message: "server does not support posix-rename@openssh.com".into(),
-                language_tag: "en-US".into(),
-            }));
+            return Ok(false);
         }
 
         self.session
             .posix_rename(oldpath, newpath)
             .await
-            .map(|_| ())
+            .map(|_| true)
     }
 
     /// Performs a statvfs on the remote file system path.
@@ -410,5 +395,38 @@ mod tests {
 
         let flags = rx.recv().await.unwrap();
         assert!(flags.contains(OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE));
+    }
+
+    #[tokio::test]
+    async fn posix_rename_requires_extension() {
+        for supported in [true, false] {
+            let (client, server) = tokio::io::duplex(1024);
+            let (tx, mut rx) = mpsc::unbounded_channel();
+
+            serve(server, move |packet| match packet {
+                Packet::Init(_) => {
+                    let mut version = Version::new();
+                    if supported {
+                        let name = extensions::POSIX_RENAME.to_owned();
+                        version.extensions.insert(name, "1".to_owned());
+                    }
+                    version.into()
+                }
+                Packet::Extended(extended) => {
+                    tx.send((extended.request, extended.data)).unwrap();
+                    Packet::error(extended.id, StatusCode::Ok)
+                }
+                packet => Packet::error(packet.get_request_id(), StatusCode::OpUnsupported),
+            });
+
+            let sftp = SftpSession::new(client).await.unwrap();
+            assert_eq!(sftp.posix_rename("old", "new").await.unwrap(), supported);
+
+            let request = (
+                extensions::POSIX_RENAME.to_owned(),
+                b"\0\0\0\x03old\0\0\0\x03new".to_vec(),
+            );
+            assert_eq!(rx.try_recv().ok(), supported.then_some(request));
+        }
     }
 }

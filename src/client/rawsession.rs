@@ -801,8 +801,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    /// Renames `oldpath` to `newpath` with POSIX `rename(2)` semantics, atomically
-    /// replacing `newpath` if it exists (`posix-rename@openssh.com`).
+    /// Renames with POSIX semantics, atomically replacing `newpath` if it exists.
     pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
         O: Into<String>,
