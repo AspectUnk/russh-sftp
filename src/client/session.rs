@@ -160,8 +160,10 @@ impl SftpSession {
     }
 
     /// Writes the contents to a file whose path is specified.
+    ///
+    /// This function will create a file if it does not exist, and will truncate it if it does.
     pub async fn write<P: Into<String>>(&self, path: P, data: &[u8]) -> SftpResult<()> {
-        let mut file = self.open_with_flags(path, OpenFlags::WRITE).await?;
+        let mut file = self.create(path).await?;
         file.write_all(data).await?;
         file.close().await?;
         Ok(())
@@ -186,14 +188,7 @@ impl SftpSession {
 
         loop {
             match self.session.readdir(handle.as_str()).await {
-                Ok(name) => {
-                    files = name
-                        .files
-                        .into_iter()
-                        .map(|f| (f.filename, f.attrs))
-                        .chain(files)
-                        .collect();
-                }
+                Ok(name) => files.extend(name.files.into_iter().map(|f| (f.filename, f.attrs))),
                 Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
                 Err(err) => return Err(err),
             }
@@ -296,5 +291,90 @@ impl SftpSession {
             Some(file) => Ok(Some(file.filename.to_owned())),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+    use tokio::{io::DuplexStream, sync::mpsc};
+
+    use super::*;
+    use crate::{
+        protocol::{self, Handle, Name, Packet, Version},
+        utils::read_packet,
+    };
+
+    /// Answers each client packet with the one returned by `reply`
+    fn serve<F>(mut stream: DuplexStream, mut reply: F)
+    where
+        F: FnMut(Packet) -> Packet + Send + 'static,
+    {
+        tokio::spawn(async move {
+            while let Ok(mut bytes) = read_packet(&mut stream, 1024).await {
+                let packet = reply(Packet::try_from(&mut bytes).unwrap());
+                let bytes = Bytes::try_from(packet).unwrap();
+                stream.write_all(&bytes).await.unwrap();
+            }
+        });
+    }
+
+    #[tokio::test]
+    async fn read_dir_keeps_server_order() {
+        let (client, server) = tokio::io::duplex(1024);
+        let mut batches = [vec!["a", "b", "c"], vec!["d", "e"]].into_iter();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::OpenDir(opendir) => Handle {
+                id: opendir.id,
+                handle: opendir.path,
+            }
+            .into(),
+            Packet::ReadDir(readdir) => match batches.next() {
+                Some(names) => Name {
+                    id: readdir.id,
+                    files: names.into_iter().map(protocol::File::dummy).collect(),
+                }
+                .into(),
+                None => Packet::error(readdir.id, StatusCode::Eof),
+            },
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        let names: Vec<_> = sftp
+            .read_dir("/")
+            .await
+            .unwrap()
+            .map(|entry| entry.file_name())
+            .collect();
+
+        assert_eq!(names, ["a", "b", "c", "d", "e"]);
+    }
+
+    #[tokio::test]
+    async fn write_creates_and_truncates() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::Open(open) => {
+                tx.send(open.pflags).unwrap();
+                Handle {
+                    id: open.id,
+                    handle: open.filename,
+                }
+                .into()
+            }
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        sftp.write("file", b"data").await.unwrap();
+
+        let flags = rx.recv().await.unwrap();
+        assert!(flags.contains(OpenFlags::CREATE | OpenFlags::TRUNCATE | OpenFlags::WRITE));
     }
 }
