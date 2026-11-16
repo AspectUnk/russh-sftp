@@ -1,6 +1,6 @@
 use log::{error, info, LevelFilter};
 use russh::keys::{Algorithm, PrivateKey};
-use russh::server::{Auth, ChannelOpenHandle, Msg, Server as _, Session};
+use russh::server::{Auth, ChannelOpenHandle, Msg, Server as _, Session, VerifiedPublicKey};
 use russh::{Channel, ChannelId};
 use russh_sftp::protocol::{File, FileAttributes, Handle, Name, Status, StatusCode, Version};
 use std::collections::HashMap;
@@ -50,9 +50,9 @@ impl russh::server::Handler for SshSession {
     async fn auth_publickey(
         &mut self,
         user: &str,
-        public_key: &russh::keys::PublicKey,
+        key: VerifiedPublicKey<'_>,
     ) -> Result<Auth, Self::Error> {
-        info!("credentials: {}, {:?}", user, public_key);
+        info!("credentials: {}, {:?}", user, key.public_key);
         Ok(Auth::Accept)
     }
 
