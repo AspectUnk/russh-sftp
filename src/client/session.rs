@@ -187,14 +187,7 @@ impl SftpSession {
 
         loop {
             match self.session.readdir(handle.as_str()).await {
-                Ok(name) => {
-                    files = name
-                        .files
-                        .into_iter()
-                        .map(|f| (f.filename, f.attrs))
-                        .chain(files)
-                        .collect();
-                }
+                Ok(name) => files.extend(name.files.into_iter().map(|f| (f.filename, f.attrs))),
                 Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
                 Err(err) => return Err(err),
             }
@@ -297,5 +290,58 @@ impl SftpSession {
             Some(file) => Ok(Some(file.filename.to_owned())),
             None => Err(Error::UnexpectedBehavior("no file".to_owned())),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::Bytes;
+
+    use super::*;
+    use crate::{
+        protocol::{self, Handle, Name, Packet, Version},
+        utils::read_packet,
+    };
+
+    #[tokio::test]
+    async fn read_dir_keeps_server_order() {
+        let (client, mut server) = tokio::io::duplex(1024);
+
+        tokio::spawn(async move {
+            let mut batches = [vec!["a", "b", "c"], vec!["d", "e"]].into_iter();
+
+            while let Ok(mut bytes) = read_packet(&mut server, 1024).await {
+                let reply = match Packet::try_from(&mut bytes).unwrap() {
+                    Packet::Init(_) => Version::new().into(),
+                    Packet::OpenDir(opendir) => Handle {
+                        id: opendir.id,
+                        handle: opendir.path,
+                    }
+                    .into(),
+                    Packet::ReadDir(readdir) => match batches.next() {
+                        Some(names) => Name {
+                            id: readdir.id,
+                            files: names.into_iter().map(protocol::File::dummy).collect(),
+                        }
+                        .into(),
+                        None => Packet::error(readdir.id, StatusCode::Eof),
+                    },
+                    packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+                };
+
+                let reply = Bytes::try_from(reply).unwrap();
+                server.write_all(&reply).await.unwrap();
+            }
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        let names: Vec<_> = sftp
+            .read_dir("/")
+            .await
+            .unwrap()
+            .map(|entry| entry.file_name())
+            .collect();
+
+        assert_eq!(names, ["a", "b", "c", "d", "e"]);
     }
 }

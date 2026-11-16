@@ -197,6 +197,20 @@ macro_rules! into_status {
     };
 }
 
+/// Pending acknowledgement of a write sent by [`RawSftpSession::write_nowait`].
+/// Resolves in the same way as [`RawSftpSession::write`].
+/// If dropped before completion the server's reply is discarded
+pub struct PendingWrite(Request);
+
+impl Future for PendingWrite {
+    type Output = SftpResult<Status>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        let result = ready!(Pin::new(&mut self.0).poll(cx))?;
+        Poll::Ready(into_status!(result))
+    }
+}
+
 impl RawSftpSession {
     pub fn new<S>(stream: S) -> Self
     where
@@ -338,13 +352,25 @@ impl RawSftpSession {
     pub(crate) fn close_nowait(&self, handle: String) -> SftpResult<Request> {
         let id = self.use_next_id();
         let request = self.send(Some(id), Close { id, handle }.into())?;
-        if self
-            .handles
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |h| h.checked_sub(1))
-            .is_err()
-        {
-            warn!("attempt to close more handles than exist");
+
+        let mut handles = self.handles.load(Ordering::SeqCst);
+        loop {
+            let Some(new) = handles.checked_sub(1) else {
+                warn!("attempt to close more handles than exist");
+                break;
+            };
+
+            match self.handles.compare_exchange_weak(
+                handles,
+                new,
+                Ordering::SeqCst,
+                Ordering::SeqCst,
+            ) {
+                Ok(_) => break,
+                Err(current) => handles = current,
+            }
         }
+
         Ok(request)
     }
 
@@ -400,6 +426,13 @@ impl RawSftpSession {
             .await?;
 
         into_status!(result)
+    }
+
+    /// Sends a borrowed write without awaiting the server's acknowledgement.
+    /// Allows writes to be pipelined without copying the data into an owned buffer
+    pub fn write_nowait(&self, handle: &str, offset: u64, data: &[u8]) -> SftpResult<PendingWrite> {
+        self.write_nowait_from_slice(handle, offset, data)
+            .map(PendingWrite)
     }
 
     /// Sends a borrowed write without awaiting the server's acknowledgement.
@@ -806,5 +839,46 @@ impl RawSftpSession {
 impl Drop for RawSftpSession {
     fn drop(&mut self) {
         let _ = self.close_session();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::AsyncWriteExt;
+
+    use super::*;
+    use crate::utils::read_packet;
+
+    #[tokio::test]
+    async fn write_nowait_pipelines_and_maps_status() {
+        let (client, mut server) = tokio::io::duplex(1024);
+        let session = RawSftpSession::new(client);
+
+        let (version, _) = tokio::join!(session.init(), async {
+            read_packet(&mut server, 1024).await.unwrap();
+            let version = Bytes::try_from(Packet::Version(Version::new())).unwrap();
+            server.write_all(&version).await.unwrap();
+        });
+        version.unwrap();
+
+        let accepted = session.write_nowait("handle", 0, b"foo").unwrap();
+        let rejected = session.write_nowait("handle", 3, b"bar").unwrap();
+
+        for (offset, code) in [(0, StatusCode::Ok), (3, StatusCode::Failure)] {
+            let mut bytes = read_packet(&mut server, 1024).await.unwrap();
+            let Packet::Write(write) = Packet::try_from(&mut bytes).unwrap() else {
+                panic!("expected write packet");
+            };
+            assert_eq!(write.offset, offset);
+
+            let status = Bytes::try_from(Packet::error(write.id, code)).unwrap();
+            server.write_all(&status).await.unwrap();
+        }
+
+        assert_eq!(accepted.await.unwrap().status_code, StatusCode::Ok);
+        assert!(matches!(
+            rejected.await,
+            Err(Error::Status(status)) if status.status_code == StatusCode::Failure
+        ));
     }
 }
