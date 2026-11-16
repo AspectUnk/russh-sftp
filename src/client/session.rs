@@ -292,88 +292,55 @@ impl SftpSession {
     }
 }
 
-#[cfg(all(test, not(target_arch = "wasm32")))]
+#[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use bytes::Bytes;
 
     use super::*;
     use crate::{
-        protocol::{File as ProtocolFile, Handle, Name, Status, Version},
-        server,
+        protocol::{self, Handle, Name, Packet, Version},
+        utils::read_packet,
     };
 
-    /// Lists `entries` names in batches of `batch` per READDIR, like OpenSSH's sftp-server.
-    struct Directory {
-        entries: usize,
-        batch: usize,
-        sent: usize,
-    }
-
-    impl server::Handler for Directory {
-        type Error = StatusCode;
-
-        fn unimplemented(&self) -> Self::Error {
-            StatusCode::OpUnsupported
-        }
-
-        async fn init(
-            &mut self,
-            _version: u32,
-            _extensions: HashMap<String, String>,
-        ) -> Result<Version, Self::Error> {
-            Ok(Version::new())
-        }
-
-        async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
-            Ok(Handle { id, handle: path })
-        }
-
-        async fn readdir(&mut self, id: u32, _handle: String) -> Result<Name, Self::Error> {
-            if self.sent == self.entries {
-                return Err(StatusCode::Eof);
-            }
-            let end = (self.sent + self.batch).min(self.entries);
-            let files = (self.sent..end)
-                .map(|i| ProtocolFile::dummy(i.to_string()))
-                .collect();
-            self.sent = end;
-            Ok(Name { id, files })
-        }
-
-        async fn close(&mut self, id: u32, _handle: String) -> Result<Status, Self::Error> {
-            Ok(Status {
-                id,
-                status_code: StatusCode::Ok,
-                error_message: "Ok".to_string(),
-                language_tag: "en-US".to_string(),
-            })
-        }
-    }
-
-    async fn session(entries: usize, batch: usize) -> SftpSession {
-        let (client, server) = tokio::io::duplex(64 * 1024);
-        server::run(
-            server,
-            Directory {
-                entries,
-                batch,
-                sent: 0,
-            },
-        )
-        .await;
-        SftpSession::new(client).await.unwrap()
-    }
-
     #[tokio::test]
-    async fn read_dir_keeps_the_server_order() {
-        let sftp = session(10, 3).await;
+    async fn read_dir_keeps_server_order() {
+        let (client, mut server) = tokio::io::duplex(1024);
+
+        tokio::spawn(async move {
+            let mut batches = [vec!["a", "b", "c"], vec!["d", "e"]].into_iter();
+
+            while let Ok(mut bytes) = read_packet(&mut server, 1024).await {
+                let reply = match Packet::try_from(&mut bytes).unwrap() {
+                    Packet::Init(_) => Version::new().into(),
+                    Packet::OpenDir(opendir) => Handle {
+                        id: opendir.id,
+                        handle: opendir.path,
+                    }
+                    .into(),
+                    Packet::ReadDir(readdir) => match batches.next() {
+                        Some(names) => Name {
+                            id: readdir.id,
+                            files: names.into_iter().map(protocol::File::dummy).collect(),
+                        }
+                        .into(),
+                        None => Packet::error(readdir.id, StatusCode::Eof),
+                    },
+                    packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+                };
+
+                let reply = Bytes::try_from(reply).unwrap();
+                server.write_all(&reply).await.unwrap();
+            }
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
         let names: Vec<_> = sftp
             .read_dir("/")
             .await
             .unwrap()
-            .map(|e| e.file_name())
+            .map(|entry| entry.file_name())
             .collect();
-        let expected: Vec<_> = (0..10).map(|i| i.to_string()).collect();
-        assert_eq!(names, expected);
+
+        assert_eq!(names, ["a", "b", "c", "d", "e"]);
     }
 }
