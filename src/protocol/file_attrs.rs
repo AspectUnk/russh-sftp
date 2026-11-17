@@ -438,13 +438,10 @@ impl<'de> Deserialize<'de> for FileAttributes {
                     },
                 };
 
-                // Extended pairs are not exposed, but must be consumed so that
-                // whatever follows (e.g. the next NAME entry) is read from the right offset.
+                // Extended pairs are not exposed, only consumed
                 if attrs.contains(FileAttr::EXTENDED) {
-                    let count = seq.next_element::<u32>()?.unwrap_or(0);
-                    for _ in 0..count {
-                        seq.next_element::<String>()?;
-                        seq.next_element::<String>()?;
+                    for _ in 0..seq.next_element::<u32>()?.unwrap_or(0) {
+                        seq.next_element::<(String, String)>()?;
                     }
                 }
 
