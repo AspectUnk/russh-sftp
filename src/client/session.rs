@@ -192,7 +192,10 @@ impl SftpSession {
             match self.session.readdir(handle.as_str()).await {
                 Ok(name) => files.extend(name.files.into_iter().map(|f| (f.filename, f.attrs))),
                 Err(Error::Status(status)) if status.status_code == StatusCode::Eof => break,
-                Err(err) => return Err(err),
+                Err(err) => {
+                    let _ = self.session.close_nowait(handle);
+                    return Err(err);
+                }
             }
         }
 
@@ -316,11 +319,14 @@ impl SftpSession {
 #[cfg(test)]
 mod tests {
     use bytes::Bytes;
-    use tokio::{io::DuplexStream, sync::mpsc};
+    use tokio::{
+        io::{AsyncSeekExt, DuplexStream},
+        sync::mpsc,
+    };
 
     use super::*;
     use crate::{
-        protocol::{self, Handle, Name, Packet, Version},
+        protocol::{self, Data, Handle, Name, Packet, Version},
         utils::read_packet,
     };
 
@@ -370,6 +376,65 @@ mod tests {
             .collect();
 
         assert_eq!(names, ["a", "b", "c", "d", "e"]);
+    }
+
+    #[tokio::test]
+    async fn read_dir_closes_handle_on_error() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::OpenDir(opendir) => Handle {
+                id: opendir.id,
+                handle: opendir.path,
+            }
+            .into(),
+            Packet::Close(close) => {
+                tx.send(close.handle).unwrap();
+                Packet::error(close.id, StatusCode::Ok)
+            }
+            packet => Packet::error(packet.get_request_id(), StatusCode::Failure),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        assert!(sftp.read_dir("dir").await.is_err());
+        assert_eq!(rx.recv().await.unwrap(), "dir");
+    }
+
+    #[tokio::test]
+    async fn seek_resets_read_chunk_len() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::Open(open) => Handle {
+                id: open.id,
+                handle: open.filename,
+            }
+            .into(),
+            Packet::Read(read) => {
+                tx.send(read.len).unwrap();
+                Data {
+                    id: read.id,
+                    data: vec![0; 10],
+                }
+                .into()
+            }
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        let mut file = sftp.open("file").await.unwrap();
+
+        // Each read is short, the second one must probe the full length again
+        for _ in 0..2 {
+            file.read_exact(&mut [0; 10]).await.unwrap();
+            file.rewind().await.unwrap();
+        }
+
+        assert_eq!(rx.recv().await, rx.recv().await);
     }
 
     #[tokio::test]
