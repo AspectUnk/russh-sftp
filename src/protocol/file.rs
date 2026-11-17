@@ -1,5 +1,4 @@
-use chrono::{DateTime, Utc};
-use std::time::{Duration, UNIX_EPOCH};
+use jiff::Timestamp;
 
 use super::FileAttributes;
 
@@ -41,13 +40,13 @@ impl File {
         let size = self.attrs.size.unwrap_or(0);
         let mtime = self.attrs.mtime.unwrap_or(0);
 
-        let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_secs(mtime as u64));
-        let now = Utc::now().timestamp();
+        let datetime = Timestamp::from_second(mtime as i64).unwrap();
+        let now = Timestamp::now().as_second();
         let age = now - (mtime as i64);
         let delayed = if !(0..=SIX_MONTHS).contains(&age) {
-            datetime.format("%b %e  %Y").to_string()
+            datetime.strftime("%b %e  %Y").to_string()
         } else {
-            datetime.format("%b %e %H:%M").to_string()
+            datetime.strftime("%b %e %H:%M").to_string()
         };
 
         format!(

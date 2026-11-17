@@ -1,12 +1,15 @@
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use std::time::SystemTime;
 use tokio::io::{AsyncRead, AsyncReadExt};
 
 use crate::error::Error;
 
 pub(crate) fn unix(time: SystemTime) -> u32 {
-    DateTime::<Utc>::from(time).timestamp() as u32
+    Timestamp::try_from(time)
+        .unwrap()
+        .as_nanosecond()
+        .div_euclid(1_000_000_000) as u32
 }
 
 pub(crate) async fn read_packet<S: AsyncRead + Unpin>(
