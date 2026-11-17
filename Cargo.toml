@@ -44,6 +44,7 @@ rand = "0.10.4"
 
 [features]
 async-trait = ["dep:async-trait"]
+raw-string = []
 
 [[bench]]
 name = "upload_benchmark"

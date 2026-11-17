@@ -1,7 +1,9 @@
 use std::{collections::HashMap, future::Future};
 
 use crate::{
-    protocol::{Attrs, Data, FileAttributes, Handle, Name, OpenFlags, Packet, Status, Version},
+    protocol::{
+        Attrs, Data, FileAttributes, Handle, Name, OpenFlags, Packet, SftpString, Status, Version,
+    },
     server::StatusReply,
 };
 
@@ -32,7 +34,7 @@ pub trait Handler: Sized {
     fn open(
         &mut self,
         id: u32,
-        filename: String,
+        filename: SftpString,
         pflags: OpenFlags,
         attrs: FileAttributes,
     ) -> impl Future<Output = Result<Handle, Self::Error>> + Send {
@@ -46,7 +48,7 @@ pub trait Handler: Sized {
     fn close(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -57,7 +59,7 @@ pub trait Handler: Sized {
     fn read(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
         offset: u64,
         len: u32,
     ) -> impl Future<Output = Result<Data, Self::Error>> + Send {
@@ -70,7 +72,7 @@ pub trait Handler: Sized {
     fn write(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
         offset: u64,
         data: Vec<u8>,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
@@ -83,7 +85,7 @@ pub trait Handler: Sized {
     fn lstat(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Attrs, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -94,7 +96,7 @@ pub trait Handler: Sized {
     fn fstat(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
     ) -> impl Future<Output = Result<Attrs, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -105,7 +107,7 @@ pub trait Handler: Sized {
     fn setstat(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
         attrs: FileAttributes,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
@@ -117,7 +119,7 @@ pub trait Handler: Sized {
     fn fsetstat(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
         attrs: FileAttributes,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
@@ -129,7 +131,7 @@ pub trait Handler: Sized {
     fn opendir(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Handle, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -141,7 +143,7 @@ pub trait Handler: Sized {
     fn readdir(
         &mut self,
         id: u32,
-        handle: String,
+        handle: SftpString,
     ) -> impl Future<Output = Result<Name, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -153,7 +155,7 @@ pub trait Handler: Sized {
     fn remove(
         &mut self,
         id: u32,
-        filename: String,
+        filename: SftpString,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -164,7 +166,7 @@ pub trait Handler: Sized {
     fn mkdir(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
         attrs: FileAttributes,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
@@ -177,7 +179,7 @@ pub trait Handler: Sized {
     fn rmdir(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -189,7 +191,7 @@ pub trait Handler: Sized {
     fn realpath(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Name, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -200,7 +202,7 @@ pub trait Handler: Sized {
     fn stat(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Attrs, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -212,8 +214,8 @@ pub trait Handler: Sized {
     fn rename(
         &mut self,
         id: u32,
-        oldpath: String,
-        newpath: String,
+        oldpath: SftpString,
+        newpath: SftpString,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -224,7 +226,7 @@ pub trait Handler: Sized {
     fn readlink(
         &mut self,
         id: u32,
-        path: String,
+        path: SftpString,
     ) -> impl Future<Output = Result<Name, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }
@@ -236,8 +238,8 @@ pub trait Handler: Sized {
     fn symlink(
         &mut self,
         id: u32,
-        linkpath: String,
-        targetpath: String,
+        linkpath: SftpString,
+        targetpath: SftpString,
     ) -> impl Future<Output = Result<Status, Self::Error>> + Send {
         let err = self.unimplemented();
         async { Err(err) }

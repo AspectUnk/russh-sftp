@@ -1,4 +1,4 @@
-use crate::{error::Error, ser};
+use crate::{error::Error, protocol::SftpString, ser};
 
 pub const LIMITS: &str = "limits@openssh.com";
 pub const HARDLINK: &str = "hardlink@openssh.com";
@@ -29,37 +29,37 @@ pub struct LimitsExtension {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HardlinkExtension {
-    pub oldpath: String,
-    pub newpath: String,
+    pub oldpath: SftpString,
+    pub newpath: SftpString,
 }
 
 impl_try_into_bytes!(HardlinkExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PosixRenameExtension {
-    pub oldpath: String,
-    pub newpath: String,
+    pub oldpath: SftpString,
+    pub newpath: SftpString,
 }
 
 impl_try_into_bytes!(PosixRenameExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FsyncExtension {
-    pub handle: String,
+    pub handle: SftpString,
 }
 
 impl_try_into_bytes!(FsyncExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatvfsExtension {
-    pub path: String,
+    pub path: SftpString,
 }
 
 impl_try_into_bytes!(StatvfsExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExpandPathExtension {
-    pub path: String,
+    pub path: SftpString,
 }
 
 impl_try_into_bytes!(ExpandPathExtension);

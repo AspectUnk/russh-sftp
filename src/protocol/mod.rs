@@ -23,6 +23,8 @@ mod rmdir;
 mod setstat;
 mod stat;
 mod status;
+#[cfg(feature = "raw-string")]
+mod string;
 mod symlink;
 mod version;
 mod write;
@@ -64,6 +66,14 @@ pub use self::{
     version::Version,
     write::Write,
 };
+
+#[cfg(feature = "raw-string")]
+pub use self::string::SftpString;
+
+/// String of paths and handles. Lossy for non-UTF-8 bytes,
+/// the `raw-string` feature replaces it with a wrapper that keeps them as is
+#[cfg(not(feature = "raw-string"))]
+pub type SftpString = String;
 
 pub const VERSION: u32 = 3;
 

@@ -1,6 +1,6 @@
 use std::fs;
 
-use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId};
+use super::{impl_packet_for, impl_request_id, FileAttributes, Packet, RequestId, SftpString};
 
 /// Opening flags according to the specification
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -54,7 +54,7 @@ impl From<OpenFlags> for fs::OpenOptions {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Open {
     pub id: u32,
-    pub filename: String,
+    pub filename: SftpString,
     pub pflags: OpenFlags,
     pub attrs: FileAttributes,
 }
