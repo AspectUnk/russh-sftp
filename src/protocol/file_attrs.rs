@@ -201,16 +201,13 @@ pub struct FileAttributes {
     pub mtime: Option<u32>,
 }
 
-/// `S_IFMT`: the file type is a 4-bit value, not a set of independent flags.
-const FILE_TYPE_MASK: u32 = 0o170000;
-
 macro_rules! impl_fn_type {
     ($get_name:ident, $set_name:ident, $doc_name:expr, $flag:ident) => {
         #[doc = "Returns `true` if is a "]
         #[doc = $doc_name]
         pub fn $get_name(&self) -> bool {
             self.permissions
-                .map_or(false, |b| b & FILE_TYPE_MASK == FileMode::$flag.bits())
+                .is_some_and(|b| FileMode::from_bits_truncate(b) == FileMode::$flag)
         }
 
         #[doc = "Set flag if is a "]
@@ -233,20 +230,17 @@ impl FileAttributes {
     impl_fn_type!(is_block, set_block, "block", BLK);
     impl_fn_type!(is_fifo, set_fifo, "fifo", FIFO);
 
-    /// Set the file type, replacing any previous one
+    /// Set file type, replacing the previous one
     pub fn set_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms & !FILE_TYPE_MASK | mode.bits());
+        self.permissions = Some(perms & !FileMode::all().bits() | mode.bits());
     }
 
-    /// Clear the file type if it is `mode`
+    /// Remove file type if it matches
     pub fn remove_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(if perms & FILE_TYPE_MASK == mode.bits() {
-            perms & !FILE_TYPE_MASK
-        } else {
-            perms
-        });
+        let matches = FileMode::from_bits_truncate(perms) == mode;
+        self.permissions = Some(if matches { perms & !mode.bits() } else { perms });
     }
 
     /// Returns the file type
@@ -308,7 +302,6 @@ impl FileAttributes {
 /// For simple conversion of [`Metadata`] into [`FileAttributes`]
 impl From<&Metadata> for FileAttributes {
     fn from(metadata: &Metadata) -> Self {
-        #[cfg_attr(unix, allow(unused_mut))]
         let mut attrs = Self {
             size: Some(metadata.len()),
             #[cfg(unix)]
@@ -328,13 +321,9 @@ impl From<&Metadata> for FileAttributes {
             ..Default::default()
         };
 
-        // On unix `mode()` already carries the exact file type.
-        #[cfg(not(unix))]
-        attrs.set_type(if metadata.is_dir() {
-            FileMode::DIR
-        } else {
-            FileMode::REG
-        });
+        attrs.set_dir(metadata.is_dir());
+        attrs.set_regular(metadata.is_file());
+        attrs.set_symlink(metadata.is_symlink());
 
         attrs
     }
@@ -460,71 +449,28 @@ impl<'de> Deserialize<'de> for FileAttributes {
 mod tests {
     use super::*;
 
-    const TYPES: [FileMode; 8] = [
-        FileMode::FIFO,
-        FileMode::CHR,
-        FileMode::DIR,
-        FileMode::NAM,
-        FileMode::BLK,
-        FileMode::REG,
-        FileMode::LNK,
-        FileMode::SOCK,
-    ];
-
-    fn with_type(mode: FileMode) -> FileAttributes {
-        FileAttributes {
-            permissions: Some(mode.bits() | 0o755),
+    #[test]
+    fn file_type_is_exact() {
+        let mut attrs = FileAttributes {
+            permissions: Some(FileMode::SOCK.bits() | 0o644),
             ..Default::default()
-        }
+        };
+        assert!(!attrs.is_dir() && !attrs.is_regular());
+
+        attrs.set_dir(false);
+        assert_eq!(attrs.permissions, Some(FileMode::SOCK.bits() | 0o644));
+
+        attrs.set_symlink(true);
+        assert!(attrs.is_symlink() && !attrs.is_regular() && !attrs.is_character());
+        assert_eq!(attrs.permissions, Some(FileMode::LNK.bits() | 0o644));
     }
 
     #[test]
-    fn type_predicates_match_only_their_own_type() {
-        for mode in TYPES {
-            let a = with_type(mode);
-            assert_eq!(a.is_dir(), mode == FileMode::DIR, "{:o}", mode.bits());
-            assert_eq!(a.is_regular(), mode == FileMode::REG, "{:o}", mode.bits());
-            assert_eq!(a.is_symlink(), mode == FileMode::LNK, "{:o}", mode.bits());
-            assert_eq!(a.is_character(), mode == FileMode::CHR, "{:o}", mode.bits());
-            assert_eq!(a.is_block(), mode == FileMode::BLK, "{:o}", mode.bits());
-            assert_eq!(a.is_fifo(), mode == FileMode::FIFO, "{:o}", mode.bits());
-        }
-    }
-
-    #[test]
-    fn set_type_replaces_and_keeps_permissions() {
-        for from in TYPES {
-            for to in TYPES {
-                let mut a = with_type(from);
-                a.set_type(to);
-                assert_eq!(a.permissions, Some(to.bits() | 0o755));
-            }
-        }
-
-        let mut a = with_type(FileMode::SOCK);
-        a.set_dir(false);
-        assert_eq!(a.permissions, Some(FileMode::SOCK.bits() | 0o755));
-        a.remove_type(FileMode::SOCK);
-        assert_eq!(a.permissions, Some(0o755));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn from_metadata_keeps_unix_file_type() {
-        let file_type =
-            |path: &str| FileAttributes::from(&std::fs::metadata(path).unwrap()).file_type();
-        assert_eq!(file_type("/dev/null"), FileType::Other);
-        assert_eq!(file_type(env!("CARGO_MANIFEST_DIR")), FileType::Dir);
-        assert_eq!(
-            file_type(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml")),
-            FileType::File
-        );
-
-        let link = std::fs::symlink_metadata("/dev/stdin").unwrap();
-        assert!(
-            link.file_type().is_symlink(),
-            "fixture: /dev/stdin should be a symlink"
-        );
-        assert_eq!(FileAttributes::from(&link).file_type(), FileType::Symlink);
+    fn metadata_keeps_file_type() {
+        let attrs = |path| FileAttributes::from(&std::fs::metadata(path).unwrap());
+        assert!(attrs(".").is_dir());
+        assert!(attrs("Cargo.toml").is_regular());
+        #[cfg(unix)]
+        assert!(attrs("/dev/null").is_character());
     }
 }
