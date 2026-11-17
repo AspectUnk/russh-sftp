@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
-use std::time::{Duration, UNIX_EPOCH};
+use jiff::Timestamp;
+use std::time::Duration;
 
 use super::FileAttributes;
 
@@ -41,13 +41,13 @@ impl File {
         let size = self.attrs.size.unwrap_or(0);
         let mtime = self.attrs.mtime.unwrap_or(0);
 
-        let datetime = DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_secs(mtime as u64));
-        let now = Utc::now().timestamp();
+        let datetime = Timestamp::UNIX_EPOCH + Duration::from_secs(mtime as u64);
+        let now = Timestamp::now().as_second();
         let age = now - (mtime as i64);
         let delayed = if !(0..=SIX_MONTHS).contains(&age) {
-            datetime.format("%b %e  %Y").to_string()
+            datetime.strftime("%b %e  %Y").to_string()
         } else {
-            datetime.format("%b %e %H:%M").to_string()
+            datetime.strftime("%b %e %H:%M").to_string()
         };
 
         format!(
@@ -64,5 +64,16 @@ impl File {
             },
             self.filename
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn longname_formats_utc_date() {
+        let file = File::new("foo", FileAttributes::dummy());
+        assert_eq!(file.longname, "drwxrwxrwx 0 0 0 0 Jan  1  1970 foo");
     }
 }

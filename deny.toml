@@ -2,6 +2,8 @@
 ignore = [
     # `rsa` via russh dev-dep only; no patch upstream
     "RUSTSEC-2023-0071",
+    # `chrono` via russh dev-dep only; unmaintained
+    "RUSTSEC-2026-0543",
 ]
 
 [bans]
