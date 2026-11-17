@@ -44,7 +44,7 @@ impl ReadState {
         self.pos = 0;
         self.offset = offset;
         self.eof = false;
-        // A short read near EOF must not cap chunk sizes for later reads elsewhere.
+        // A short read near EOF must not limit later reads
         self.chunk_len = None;
     }
 
