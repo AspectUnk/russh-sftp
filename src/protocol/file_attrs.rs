@@ -404,7 +404,7 @@ impl<'de> Deserialize<'de> for FileAttributes {
             {
                 let attrs = FileAttr::from_bits_truncate(seq.next_element::<u32>()?.unwrap_or(0));
 
-                Ok(FileAttributes {
+                let file_attrs = FileAttributes {
                     size: if attrs.contains(FileAttr::SIZE) {
                         seq.next_element::<u64>()?
                     } else {
@@ -437,7 +437,16 @@ impl<'de> Deserialize<'de> for FileAttributes {
                     } else {
                         None
                     },
-                })
+                };
+
+                // Extended pairs are not exposed, only consumed
+                if attrs.contains(FileAttr::EXTENDED) {
+                    for _ in 0..seq.next_element::<u32>()?.unwrap_or(0) {
+                        seq.next_element::<(String, String)>()?;
+                    }
+                }
+
+                Ok(file_attrs)
             }
         }
 
