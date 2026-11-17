@@ -1,10 +1,10 @@
-use super::{impl_packet_for, impl_request_id, Packet, RequestId, SftpString};
+use super::{impl_packet_for, impl_request_id, Packet, RequestId, SftpHandle};
 
 /// Implementation for `SSH_FXP_READ`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Read {
     pub id: u32,
-    pub handle: SftpString,
+    pub handle: SftpHandle,
     pub offset: u64,
     pub len: u32,
 }

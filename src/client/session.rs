@@ -350,7 +350,7 @@ mod tests {
             Packet::Init(_) => Version::new().into(),
             Packet::OpenDir(opendir) => Handle {
                 id: opendir.id,
-                handle: opendir.path,
+                handle: opendir.path.into(),
             }
             .into(),
             Packet::ReadDir(readdir) => match batches.next() {
@@ -386,7 +386,7 @@ mod tests {
             Packet::Init(_) => Version::new().into(),
             Packet::OpenDir(opendir) => Handle {
                 id: opendir.id,
-                handle: opendir.path,
+                handle: opendir.path.into(),
             }
             .into(),
             Packet::ReadDir(readdir) => match names.next() {
@@ -413,6 +413,30 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handle_bytes_are_kept() {
+        let (client, server) = tokio::io::duplex(1024);
+        let (tx, mut rx) = mpsc::unbounded_channel();
+
+        serve(server, move |packet| match packet {
+            Packet::Init(_) => Version::new().into(),
+            Packet::Open(open) => Handle {
+                id: open.id,
+                handle: b"\0\0\0\x80".into(),
+            }
+            .into(),
+            Packet::Close(close) => {
+                tx.send(close.handle).unwrap();
+                Packet::error(close.id, StatusCode::Ok)
+            }
+            packet => Packet::error(packet.get_request_id(), StatusCode::Ok),
+        });
+
+        let sftp = SftpSession::new(client).await.unwrap();
+        sftp.open("file").await.unwrap().close().await.unwrap();
+        assert_eq!(rx.recv().await.unwrap().as_bytes(), b"\0\0\0\x80");
+    }
+
+    #[tokio::test]
     async fn write_creates_and_truncates() {
         let (client, server) = tokio::io::duplex(1024);
         let (tx, mut rx) = mpsc::unbounded_channel();
@@ -423,7 +447,7 @@ mod tests {
                 tx.send(open.pflags).unwrap();
                 Handle {
                     id: open.id,
-                    handle: open.filename,
+                    handle: open.filename.into(),
                 }
                 .into()
             }

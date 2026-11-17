@@ -1,6 +1,8 @@
 use std::{borrow::Cow, fmt, ops::Deref, str::Utf8Error};
 
-/// String of paths and handles that keeps the bytes as is,
+use super::SftpHandle;
+
+/// String of paths that keeps the bytes as is,
 /// since the remote side is not obliged to use UTF-8.
 /// Displayed lossy, the original is available via [`SftpString::as_bytes`]
 #[derive(Default, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -76,6 +78,12 @@ impl From<String> for SftpString {
 impl From<Vec<u8>> for SftpString {
     fn from(value: Vec<u8>) -> Self {
         Self(value)
+    }
+}
+
+impl From<SftpString> for SftpHandle {
+    fn from(value: SftpString) -> Self {
+        value.0.into()
     }
 }
 

@@ -1,13 +1,13 @@
 use bytes::Bytes;
 
-use super::{impl_packet_for, impl_request_id, Packet, RequestId, SftpString};
+use super::{impl_packet_for, impl_request_id, Packet, RequestId, SftpHandle};
 use crate::{error::Error, protocol::SSH_FXP_WRITE, ser};
 
 /// Implementation for `SSH_FXP_WRITE`
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Write {
     pub id: u32,
-    pub handle: SftpString,
+    pub handle: SftpHandle,
     pub offset: u64,
     #[serde(with = "serde_bytes")]
     pub data: Vec<u8>,

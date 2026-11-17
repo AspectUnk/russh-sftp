@@ -16,7 +16,7 @@ use crate::{
         session::Features,
         RawSftpSession,
     },
-    protocol::{Packet, SftpString, StatusCode},
+    protocol::{Packet, SftpHandle, StatusCode},
 };
 
 type StateFn<T> = Option<Pin<Box<dyn Future<Output = io::Result<T>> + Send + Sync + 'static>>>;
@@ -51,7 +51,7 @@ impl ReadState {
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
         session: &RawSftpSession,
-        handle: &SftpString,
+        handle: &SftpHandle,
         features: Features,
     ) -> Poll<io::Result<usize>> {
         if buf.remaining() == 0 {
@@ -103,7 +103,7 @@ impl ReadState {
     fn request(
         &mut self,
         session: &RawSftpSession,
-        handle: &SftpString,
+        handle: &SftpHandle,
         features: Features,
     ) -> io::Result<()> {
         let max_len = features.max_packet_len.saturating_sub(READ_OVERHEAD_LENGTH) as u64;
@@ -163,7 +163,7 @@ struct FileState {
 /// request the actual file size from the remote server.
 pub struct File {
     session: Arc<RawSftpSession>,
-    handle: SftpString,
+    handle: SftpHandle,
     state: FileState,
     pos: u64,
     closed: bool,
@@ -173,7 +173,7 @@ pub struct File {
 impl File {
     pub(crate) fn new(
         session: Arc<RawSftpSession>,
-        handle: SftpString,
+        handle: SftpHandle,
         features: Features,
     ) -> Self {
         Self {
@@ -378,7 +378,7 @@ impl AsyncWrite for File {
         let packet_write_len = self
             .features
             .max_packet_len
-            .saturating_sub(WRITE_OVERHEAD_LENGTH + self.handle.len() as u32)
+            .saturating_sub(WRITE_OVERHEAD_LENGTH + self.handle.as_bytes().len() as u32)
             as usize;
         let server_write_len = self
             .features
@@ -389,7 +389,7 @@ impl AsyncWrite for File {
         let preferred_write_len = self
             .features
             .max_write_packet_len
-            .saturating_sub(WRITE_OVERHEAD_LENGTH + self.handle.len() as u32)
+            .saturating_sub(WRITE_OVERHEAD_LENGTH + self.handle.as_bytes().len() as u32)
             .max(1) as usize;
 
         let len = buf

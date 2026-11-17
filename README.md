@@ -35,7 +35,7 @@ Median throughput over six runs against OpenSSH in Docker (tmpfs), using the sam
 - [x] Simple server example
 - [ ] Full server example
 - [x] Extension support: `limits@openssh.com`, `hardlink@openssh.com`, `posix-rename@openssh.com`, `fsync@openssh.com`, `statvfs@openssh.com`, `expand-path@openssh.com`
-- [x] Non-UTF-8 paths and handles: `raw-string` feature
+- [x] Non-UTF-8 paths: `raw-string` feature
 - [ ] Unit tests
 - [x] Workflow
 

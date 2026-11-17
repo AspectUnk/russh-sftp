@@ -26,8 +26,8 @@ use crate::{
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
         Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
-        Remove, Rename, RmDir, SetStat, SftpString, Stat, Status, StatusCode, Symlink, Version,
-        Write, WriteRef,
+        Remove, Rename, RmDir, SetStat, SftpHandle, SftpString, Stat, Status, StatusCode, Symlink,
+        Version, Write, WriteRef,
     },
 };
 
@@ -356,13 +356,13 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn close<H: Into<SftpString>>(&self, handle: H) -> SftpResult<Status> {
+    pub async fn close<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Status> {
         let result = self.close_nowait(handle.into())?.await?;
         into_status!(result)
     }
 
     /// Sends a close packet without awaiting the server's acknowledgement.
-    pub(crate) fn close_nowait(&self, handle: SftpString) -> SftpResult<Request> {
+    pub(crate) fn close_nowait(&self, handle: SftpHandle) -> SftpResult<Request> {
         let id = self.use_next_id();
         let request = self.send(Some(id), Close { id, handle }.into())?;
 
@@ -387,7 +387,7 @@ impl RawSftpSession {
         Ok(request)
     }
 
-    pub async fn read<H: Into<SftpString>>(
+    pub async fn read<H: Into<SftpHandle>>(
         &self,
         handle: H,
         offset: u64,
@@ -414,7 +414,7 @@ impl RawSftpSession {
         into_with_status!(result, Data)
     }
 
-    pub async fn write<H: Into<SftpString>>(
+    pub async fn write<H: Into<SftpHandle>>(
         &self,
         handle: H,
         offset: u64,
@@ -482,7 +482,7 @@ impl RawSftpSession {
 
     pub(crate) fn read_nowait(
         &self,
-        handle: &SftpString,
+        handle: &SftpHandle,
         offset: u64,
         len: u32,
     ) -> SftpResult<Request> {
@@ -519,7 +519,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn fstat<H: Into<SftpString>>(&self, handle: H) -> SftpResult<Attrs> {
+    pub async fn fstat<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -556,7 +556,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsetstat<H: Into<SftpString>>(
+    pub async fn fsetstat<H: Into<SftpHandle>>(
         &self,
         handle: H,
         attrs: FileAttributes,
@@ -605,7 +605,7 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn readdir<H: Into<SftpString>>(&self, handle: H) -> SftpResult<Name> {
+    pub async fn readdir<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -831,7 +831,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsync<H: Into<SftpString>>(&self, handle: H) -> SftpResult<Status> {
+    pub async fn fsync<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Status> {
         let result = self
             .extended(
                 extensions::FSYNC,

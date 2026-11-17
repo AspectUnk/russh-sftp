@@ -1,4 +1,8 @@
-use crate::{error::Error, protocol::SftpString, ser};
+use crate::{
+    error::Error,
+    protocol::{SftpHandle, SftpString},
+    ser,
+};
 
 pub const LIMITS: &str = "limits@openssh.com";
 pub const HARDLINK: &str = "hardlink@openssh.com";
@@ -45,7 +49,7 @@ impl_try_into_bytes!(PosixRenameExtension);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FsyncExtension {
-    pub handle: SftpString,
+    pub handle: SftpHandle,
 }
 
 impl_try_into_bytes!(FsyncExtension);
