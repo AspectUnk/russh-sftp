@@ -2,7 +2,9 @@ use log::{error, info, LevelFilter};
 use russh::keys::{Algorithm, PrivateKey};
 use russh::server::{Auth, ChannelOpenHandle, Msg, Server as _, Session, VerifiedPublicKey};
 use russh::{Channel, ChannelId};
-use russh_sftp::protocol::{File, FileAttributes, Handle, Name, Status, StatusCode, Version};
+use russh_sftp::protocol::{
+    File, FileAttributes, Handle, Name, SftpHandle, SftpString, Status, StatusCode, Version,
+};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -130,7 +132,7 @@ impl russh_sftp::server::Handler for SftpSession {
         Ok(Version::new())
     }
 
-    async fn close(&mut self, id: u32, _handle: String) -> Result<Status, Self::Error> {
+    async fn close(&mut self, id: u32, _handle: SftpHandle) -> Result<Status, Self::Error> {
         Ok(Status {
             id,
             status_code: StatusCode::Ok,
@@ -139,15 +141,18 @@ impl russh_sftp::server::Handler for SftpSession {
         })
     }
 
-    async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, Self::Error> {
+    async fn opendir(&mut self, id: u32, path: SftpString) -> Result<Handle, Self::Error> {
         info!("opendir: {}", path);
         self.root_dir_read_done = false;
-        Ok(Handle { id, handle: path })
+        Ok(Handle {
+            id,
+            handle: path.into(),
+        })
     }
 
-    async fn readdir(&mut self, id: u32, handle: String) -> Result<Name, Self::Error> {
-        info!("readdir handle: {}", handle);
-        if handle == "/" && !self.root_dir_read_done {
+    async fn readdir(&mut self, id: u32, handle: SftpHandle) -> Result<Name, Self::Error> {
+        info!("readdir handle: {:?}", handle);
+        if handle.as_bytes() == b"/" && !self.root_dir_read_done {
             self.root_dir_read_done = true;
             return Ok(Name {
                 id,
@@ -161,7 +166,7 @@ impl russh_sftp::server::Handler for SftpSession {
         Err(StatusCode::Eof)
     }
 
-    async fn realpath(&mut self, id: u32, path: String) -> Result<Name, Self::Error> {
+    async fn realpath(&mut self, id: u32, path: SftpString) -> Result<Name, Self::Error> {
         info!("realpath: {}", path);
         Ok(Name {
             id,

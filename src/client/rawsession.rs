@@ -26,8 +26,8 @@ use crate::{
     protocol::{
         Attrs, Close, Data, Extended, ExtendedReply, FSetStat, FileAttributes, Fstat, Handle, Init,
         Lstat, MkDir, Name, Open, OpenDir, OpenFlags, Packet, Read, ReadDir, ReadLink, RealPath,
-        Remove, Rename, RmDir, SetStat, Stat, Status, StatusCode, Symlink, Version, Write,
-        WriteRef,
+        Remove, Rename, RmDir, SetStat, SftpHandle, SftpString, Stat, Status, StatusCode, Symlink,
+        Version, Write, WriteRef,
     },
 };
 
@@ -321,7 +321,7 @@ impl RawSftpSession {
         }
     }
 
-    pub async fn open<T: Into<String>>(
+    pub async fn open<T: Into<SftpString>>(
         &self,
         filename: T,
         flags: OpenFlags,
@@ -356,13 +356,13 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn close<H: Into<String>>(&self, handle: H) -> SftpResult<Status> {
+    pub async fn close<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Status> {
         let result = self.close_nowait(handle.into())?.await?;
         into_status!(result)
     }
 
     /// Sends a close packet without awaiting the server's acknowledgement.
-    pub(crate) fn close_nowait(&self, handle: String) -> SftpResult<Request> {
+    pub(crate) fn close_nowait(&self, handle: SftpHandle) -> SftpResult<Request> {
         let id = self.use_next_id();
         let request = self.send(Some(id), Close { id, handle }.into())?;
 
@@ -387,7 +387,7 @@ impl RawSftpSession {
         Ok(request)
     }
 
-    pub async fn read<H: Into<String>>(
+    pub async fn read<H: Into<SftpHandle>>(
         &self,
         handle: H,
         offset: u64,
@@ -414,7 +414,7 @@ impl RawSftpSession {
         into_with_status!(result, Data)
     }
 
-    pub async fn write<H: Into<String>>(
+    pub async fn write<H: Into<SftpHandle>>(
         &self,
         handle: H,
         offset: u64,
@@ -443,15 +443,20 @@ impl RawSftpSession {
 
     /// Sends a borrowed write without awaiting the server's acknowledgement.
     /// Allows writes to be pipelined without copying the data into an owned buffer
-    pub fn write_nowait(&self, handle: &str, offset: u64, data: &[u8]) -> SftpResult<PendingWrite> {
-        self.write_nowait_from_slice(handle, offset, data)
+    pub fn write_nowait<H: AsRef<[u8]>>(
+        &self,
+        handle: H,
+        offset: u64,
+        data: &[u8],
+    ) -> SftpResult<PendingWrite> {
+        self.write_nowait_from_slice(handle.as_ref(), offset, data)
             .map(PendingWrite)
     }
 
     /// Sends a borrowed write without awaiting the server's acknowledgement.
     pub(crate) fn write_nowait_from_slice(
         &self,
-        handle: &str,
+        handle: &[u8],
         offset: u64,
         data: &[u8],
     ) -> SftpResult<Request> {
@@ -475,7 +480,12 @@ impl RawSftpSession {
         )
     }
 
-    pub(crate) fn read_nowait(&self, handle: &str, offset: u64, len: u32) -> SftpResult<Request> {
+    pub(crate) fn read_nowait(
+        &self,
+        handle: &SftpHandle,
+        offset: u64,
+        len: u32,
+    ) -> SftpResult<Request> {
         if self.limits.read_len.is_some_and(|limit| len as u64 > limit) {
             return Err(Error::Limited("read limit reached".to_owned()));
         }
@@ -485,7 +495,7 @@ impl RawSftpSession {
             Some(id),
             Read {
                 id,
-                handle: handle.to_owned(),
+                handle: handle.clone(),
                 offset,
                 len,
             }
@@ -493,7 +503,7 @@ impl RawSftpSession {
         )
     }
 
-    pub async fn lstat<P: Into<String>>(&self, path: P) -> SftpResult<Attrs> {
+    pub async fn lstat<P: Into<SftpString>>(&self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -509,7 +519,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn fstat<H: Into<String>>(&self, handle: H) -> SftpResult<Attrs> {
+    pub async fn fstat<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -525,7 +535,7 @@ impl RawSftpSession {
         into_with_status!(result, Attrs)
     }
 
-    pub async fn setstat<P: Into<String>>(
+    pub async fn setstat<P: Into<SftpString>>(
         &self,
         path: P,
         attrs: FileAttributes,
@@ -546,7 +556,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsetstat<H: Into<String>>(
+    pub async fn fsetstat<H: Into<SftpHandle>>(
         &self,
         handle: H,
         attrs: FileAttributes,
@@ -567,7 +577,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn opendir<P: Into<String>>(&self, path: P) -> SftpResult<Handle> {
+    pub async fn opendir<P: Into<SftpString>>(&self, path: P) -> SftpResult<Handle> {
         if self
             .limits
             .open_handles
@@ -595,7 +605,7 @@ impl RawSftpSession {
         into_with_status!(result, Handle)
     }
 
-    pub async fn readdir<H: Into<String>>(&self, handle: H) -> SftpResult<Name> {
+    pub async fn readdir<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -611,7 +621,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn remove<T: Into<String>>(&self, filename: T) -> SftpResult<Status> {
+    pub async fn remove<T: Into<SftpString>>(&self, filename: T) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -627,7 +637,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn mkdir<P: Into<String>>(
+    pub async fn mkdir<P: Into<SftpString>>(
         &self,
         path: P,
         attrs: FileAttributes,
@@ -648,7 +658,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn rmdir<P: Into<String>>(&self, path: P) -> SftpResult<Status> {
+    pub async fn rmdir<P: Into<SftpString>>(&self, path: P) -> SftpResult<Status> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -664,7 +674,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn realpath<P: Into<String>>(&self, path: P) -> SftpResult<Name> {
+    pub async fn realpath<P: Into<SftpString>>(&self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -680,7 +690,7 @@ impl RawSftpSession {
         into_with_status!(result, Name)
     }
 
-    pub async fn stat<P: Into<String>>(&self, path: P) -> SftpResult<Attrs> {
+    pub async fn stat<P: Into<SftpString>>(&self, path: P) -> SftpResult<Attrs> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -698,8 +708,8 @@ impl RawSftpSession {
 
     pub async fn rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<SftpString>,
+        N: Into<SftpString>,
     {
         let id = self.use_next_id();
         let result = self
@@ -717,7 +727,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn readlink<P: Into<String>>(&self, path: P) -> SftpResult<Name> {
+    pub async fn readlink<P: Into<SftpString>>(&self, path: P) -> SftpResult<Name> {
         let id = self.use_next_id();
         let result = self
             .request(
@@ -735,8 +745,8 @@ impl RawSftpSession {
 
     pub async fn symlink<P, T>(&self, path: P, target: T) -> SftpResult<Status>
     where
-        P: Into<String>,
-        T: Into<String>,
+        P: Into<SftpString>,
+        T: Into<SftpString>,
     {
         let id = self.use_next_id();
         let result = self
@@ -784,8 +794,8 @@ impl RawSftpSession {
 
     pub async fn hardlink<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<SftpString>,
+        N: Into<SftpString>,
     {
         let result = self
             .extended(
@@ -804,8 +814,8 @@ impl RawSftpSession {
     /// Renames with POSIX semantics, atomically replacing `newpath` if it exists.
     pub async fn posix_rename<O, N>(&self, oldpath: O, newpath: N) -> SftpResult<Status>
     where
-        O: Into<String>,
-        N: Into<String>,
+        O: Into<SftpString>,
+        N: Into<SftpString>,
     {
         let result = self
             .extended(
@@ -821,7 +831,7 @@ impl RawSftpSession {
         into_status!(result)
     }
 
-    pub async fn fsync<H: Into<String>>(&self, handle: H) -> SftpResult<Status> {
+    pub async fn fsync<H: Into<SftpHandle>>(&self, handle: H) -> SftpResult<Status> {
         let result = self
             .extended(
                 extensions::FSYNC,
@@ -837,7 +847,7 @@ impl RawSftpSession {
 
     pub async fn statvfs<P>(&self, path: P) -> SftpResult<Statvfs>
     where
-        P: Into<String>,
+        P: Into<SftpString>,
     {
         let result = self
             .extended(
@@ -857,7 +867,7 @@ impl RawSftpSession {
 
     /// Expands `~`/`~user` and canonicalizes the path.
     /// Replies in the same format as [`RawSftpSession::realpath`]
-    pub async fn expand_path<P: Into<String>>(&self, path: P) -> SftpResult<Name> {
+    pub async fn expand_path<P: Into<SftpString>>(&self, path: P) -> SftpResult<Name> {
         let result = self
             .extended(
                 extensions::EXPAND_PATH,

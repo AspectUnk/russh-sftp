@@ -1,18 +1,18 @@
 use jiff::Timestamp;
 use std::time::Duration;
 
-use super::FileAttributes;
+use super::{FileAttributes, SftpString};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct File {
-    pub filename: String,
+    pub filename: SftpString,
     pub longname: String,
     pub attrs: FileAttributes,
 }
 
 impl File {
     /// Omits `longname` and set dummy `attributes`. This is mainly used for [`crate::server::Handler::realpath`] as per the standard
-    pub fn dummy<S: Into<String>>(filename: S) -> Self {
+    pub fn dummy<S: Into<SftpString>>(filename: S) -> Self {
         Self {
             filename: filename.into(),
             longname: "".to_string(),
@@ -21,7 +21,7 @@ impl File {
     }
 
     /// Implies the use of longname
-    pub fn new<S: Into<String>>(filename: S, attrs: FileAttributes) -> Self {
+    pub fn new<S: Into<SftpString>>(filename: S, attrs: FileAttributes) -> Self {
         let mut file = Self {
             filename: filename.into(),
             longname: "".to_string(),
