@@ -38,7 +38,8 @@ pub struct Config {
     pub max_concurrent_writes: usize,
     /// Preferred maximum size of a framed write packet. Default: 32 KiB.
     pub max_write_packet_len: u32,
-    /// Timeout in seconds for each request. Default: 10.
+    /// Timeout in seconds for a reply to each request,
+    /// counted once the request is written to the stream. Default: 10.
     pub request_timeout_secs: u64,
 }
 
@@ -92,12 +93,40 @@ where
 }
 
 /// Run processing stream as SFTP client with custom configuration
-pub fn run_with_config<S, H>(stream: S, mut handler: H, cfg: Config) -> mpsc::UnboundedSender<Bytes>
+pub fn run_with_config<S, H>(stream: S, handler: H, cfg: Config) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
-    let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
+    run_outgoing(stream, handler, cfg)
+}
+
+/// Packet of the write half that is told once it is written to the stream
+pub(crate) trait Outgoing: Send + 'static {
+    fn bytes(&self) -> &Bytes;
+    fn written(self);
+}
+
+impl Outgoing for Bytes {
+    fn bytes(&self) -> &Bytes {
+        self
+    }
+
+    fn written(self) {}
+}
+
+/// Same as [`run_with_config`], but with packets that know when they are written
+pub(crate) fn run_outgoing<S, H, T>(
+    stream: S,
+    mut handler: H,
+    cfg: Config,
+) -> mpsc::UnboundedSender<T>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    H: Handler + Send + 'static,
+    T: Outgoing,
+{
+    let (tx, mut rx) = mpsc::unbounded_channel::<T>();
     let (mut rd, mut wr) = io::split(stream);
 
     let rc = CancellationToken::new();
@@ -130,15 +159,17 @@ where
             select! {
                 data = rx.recv() => {
                     let Some(data) = data else { break; };
-                    if data.is_empty() {
+                    if data.bytes().is_empty() {
                         let _ = wr.shutdown().await;
                         break;
                     }
 
-                    if let Err(error) = wr.write_all(&data[..]).await {
+                    if let Err(error) = wr.write_all(data.bytes()).await {
                         warn!("{}", error);
                         break;
                     }
+
+                    data.written();
                 },
                 _ = wc.cancelled() => break,
             }

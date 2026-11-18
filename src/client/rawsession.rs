@@ -4,7 +4,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         Arc,
     },
     task::{ready, Context, Poll},
@@ -15,9 +15,9 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-use super::{error::Error, runtime, Handler};
+use super::{error::Error, runtime, Handler, Outgoing};
 use crate::{
-    client::{run_with_config, Config},
+    client::{run_outgoing, Config},
     de,
     extensions::{
         self, ExpandPathExtension, FsyncExtension, HardlinkExtension, LimitsExtension,
@@ -33,12 +33,38 @@ use crate::{
 
 pub type SftpResult<T> = Result<T, Error>;
 type SharedRequests = HashMap<Option<u32>, oneshot::Sender<SftpResult<Packet>>>;
+type Timeout = Pin<Box<dyn Future<Output = SftpResult<()>> + Send + Sync>>;
+
+/// Packet in the write queue. Once written it starts the response timer
+/// of its request, so the time spent in the queue is not counted
+#[derive(Default)]
+struct Queued {
+    bytes: Bytes,
+    timeout: Duration,
+    written: Arc<AtomicUsize>,
+    deadline: Option<oneshot::Sender<Timeout>>,
+}
+
+impl Outgoing for Queued {
+    fn bytes(&self) -> &Bytes {
+        &self.bytes
+    }
+
+    fn written(self) {
+        self.written.fetch_add(1, Ordering::Relaxed);
+
+        if let Some(deadline) = self.deadline {
+            let timeout = runtime::timeout(self.timeout, std::future::pending());
+            let _ = deadline.send(Box::pin(timeout));
+        }
+    }
+}
 
 pub(crate) struct Request {
     id: Option<u32>,
     requests: Arc<SharedRequests>,
     response: oneshot::Receiver<SftpResult<Packet>>,
-    timeout: Pin<Box<dyn Future<Output = SftpResult<()>> + Send + Sync>>,
+    timeout: Timeout,
     completed: bool,
 }
 
@@ -171,7 +197,8 @@ impl From<LimitsExtension> for Limits {
 /// then the packet is returned as Ok in other error cases
 /// the packet is stored as Err.
 pub struct RawSftpSession {
-    tx: mpsc::UnboundedSender<Bytes>,
+    tx: mpsc::UnboundedSender<Queued>,
+    written: Arc<AtomicUsize>,
     requests: Arc<SharedRequests>,
     closed: Arc<AtomicBool>,
     next_req_id: AtomicU32,
@@ -236,7 +263,8 @@ impl RawSftpSession {
         let timeout = AtomicU32::new(u32::try_from(cfg.request_timeout_secs).unwrap_or(u32::MAX));
 
         Self {
-            tx: run_with_config(stream, inner, cfg),
+            tx: run_outgoing(stream, inner, cfg),
+            written: Arc::default(),
             requests: req_map,
             closed,
             next_req_id: AtomicU32::new(1),
@@ -274,13 +302,27 @@ impl RawSftpSession {
         }
 
         let (tx, rx) = oneshot::channel();
+        let (deadline_tx, mut deadline_rx) = oneshot::channel();
         let timeout = Duration::from_secs(self.timeout.load(Ordering::Relaxed).into());
-        let timeout = runtime::timeout(timeout, std::future::pending());
+        let written = self.written.clone();
         let request = Request {
             id,
             requests: self.requests.clone(),
             response: rx,
-            timeout: Box::pin(timeout),
+            // Until the packet is written, the timer restarts while the queue is moving
+            timeout: Box::pin(async move {
+                loop {
+                    let seen = written.load(Ordering::Relaxed);
+                    match runtime::timeout(timeout, &mut deadline_rx).await {
+                        Ok(Ok(deadline)) => return deadline.await,
+                        // A stopped write half closes the session, that wakes the request
+                        Ok(Err(_)) => break,
+                        Err(_) if written.load(Ordering::Relaxed) != seen => (),
+                        Err(error) => return Err(error),
+                    }
+                }
+                runtime::timeout(timeout, std::future::pending()).await
+            }),
             completed: false,
         };
         self.requests.insert(id, tx);
@@ -291,7 +333,12 @@ impl RawSftpSession {
             return Err(Error::UnexpectedBehavior("session closed".into()));
         }
 
-        self.tx.send(bytes)?;
+        self.tx.send(Queued {
+            bytes,
+            timeout,
+            written: self.written.clone(),
+            deadline: Some(deadline_tx),
+        })?;
 
         Ok(request)
     }
@@ -310,7 +357,7 @@ impl RawSftpSession {
             return Ok(());
         }
 
-        Ok(self.tx.send(Bytes::new())?)
+        Ok(self.tx.send(Queued::default())?)
     }
 
     pub async fn init(&self) -> SftpResult<Version> {
@@ -944,5 +991,34 @@ mod tests {
             rejected.await,
             Err(Error::Status(status)) if status.status_code == StatusCode::Failure
         ));
+    }
+    #[tokio::test]
+    async fn timeout_skips_time_in_write_queue() {
+        let (client, mut server) = tokio::io::duplex(64);
+        let session = RawSftpSession::new(client);
+        session.set_timeout(1);
+
+        let (version, _) = tokio::join!(session.init(), async {
+            read_packet(&mut server, 1024).await.unwrap();
+            let version = Bytes::try_from(Packet::Version(Version::new())).unwrap();
+            server.write_all(&version).await.unwrap();
+        });
+        version.unwrap();
+
+        let mut writes: Vec<_> = (0..6)
+            .map(|_| session.write_nowait("handle", 0, b"foo").unwrap())
+            .collect();
+
+        // Each packet is answered at once, but the queue is written longer than the timeout.
+        let (last, _) = tokio::join!(writes.pop().unwrap(), async {
+            for _ in 0..6 {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                let mut bytes = read_packet(&mut server, 1024).await.unwrap();
+                let id = Packet::try_from(&mut bytes).unwrap().get_request_id();
+                let status = Bytes::try_from(Packet::error(id, StatusCode::Ok)).unwrap();
+                server.write_all(&status).await.unwrap();
+            }
+        });
+        assert!(last.is_ok());
     }
 }
