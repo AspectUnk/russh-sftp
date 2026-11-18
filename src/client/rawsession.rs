@@ -4,7 +4,7 @@ use std::{
     future::Future,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU32, Ordering},
         Arc,
     },
     task::{ready, Context, Poll},
@@ -175,8 +175,8 @@ pub struct RawSftpSession {
     requests: Arc<SharedRequests>,
     closed: Arc<AtomicBool>,
     next_req_id: AtomicU32,
-    handles: AtomicU64,
-    timeout: AtomicU64,
+    handles: AtomicU32,
+    timeout: AtomicU32,
     limits: Limits,
 }
 
@@ -233,14 +233,14 @@ impl RawSftpSession {
             requests: req_map.clone(),
             closed: closed.clone(),
         };
-        let timeout = AtomicU64::new(cfg.request_timeout_secs);
+        let timeout = AtomicU32::new(u32::try_from(cfg.request_timeout_secs).unwrap_or(u32::MAX));
 
         Self {
             tx: run_with_config(stream, inner, cfg),
             requests: req_map,
             closed,
             next_req_id: AtomicU32::new(1),
-            handles: AtomicU64::new(0),
+            handles: AtomicU32::new(0),
             timeout,
             limits: Limits::default(),
         }
@@ -249,7 +249,8 @@ impl RawSftpSession {
     /// Set the maximum response time in seconds.
     /// Default: 10 seconds
     pub fn set_timeout(&self, secs: u64) {
-        self.timeout.store(secs, Ordering::Relaxed);
+        self.timeout
+            .store(u32::try_from(secs).unwrap_or(u32::MAX), Ordering::Relaxed);
     }
 
     /// Setting limits. For the `limits@openssh.com` extension
@@ -273,7 +274,7 @@ impl RawSftpSession {
         }
 
         let (tx, rx) = oneshot::channel();
-        let timeout = Duration::from_secs(self.timeout.load(Ordering::Relaxed));
+        let timeout = Duration::from_secs(self.timeout.load(Ordering::Relaxed).into());
         let timeout = runtime::timeout(timeout, std::future::pending());
         let request = Request {
             id,
@@ -330,7 +331,7 @@ impl RawSftpSession {
         if self
             .limits
             .open_handles
-            .is_some_and(|h| self.handles.load(Ordering::SeqCst) >= h)
+            .is_some_and(|h| u64::from(self.handles.load(Ordering::SeqCst)) >= h)
         {
             return Err(Error::Limited("handle limit reached".to_owned()));
         }
@@ -581,7 +582,7 @@ impl RawSftpSession {
         if self
             .limits
             .open_handles
-            .is_some_and(|h| self.handles.load(Ordering::SeqCst) >= h)
+            .is_some_and(|h| u64::from(self.handles.load(Ordering::SeqCst)) >= h)
         {
             return Err(Error::Limited("Handle limit reached".to_owned()));
         }
