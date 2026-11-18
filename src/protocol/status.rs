@@ -1,9 +1,10 @@
+use serde::{Deserialize, Deserializer};
 use thiserror::Error;
 
 use super::{impl_packet_for, impl_request_id, Packet, RequestId};
 
 /// Error Codes for SSH_FXP_STATUS
-#[derive(Debug, Error, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, Copy, PartialEq, Serialize)]
 pub enum StatusCode {
     /// Indicates successful completion of the operation.
     #[error("Ok")]
@@ -40,6 +41,33 @@ pub enum StatusCode {
     OpUnsupported = 8,
 }
 
+impl From<u32> for StatusCode {
+    /// Codes outside the specification draft are treated as [`StatusCode::Failure`]
+    fn from(code: u32) -> Self {
+        match code {
+            0 => Self::Ok,
+            1 => Self::Eof,
+            2 => Self::NoSuchFile,
+            3 => Self::PermissionDenied,
+            4 => Self::Failure,
+            5 => Self::BadMessage,
+            6 => Self::NoConnection,
+            7 => Self::ConnectionLost,
+            8 => Self::OpUnsupported,
+            _ => Self::Failure,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for StatusCode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        u32::deserialize(deserializer).map(Self::from)
+    }
+}
+
 /// Implementation for SSH_FXP_STATUS as defined in the specification draft
 /// <https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-7>
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,3 +80,30 @@ pub struct Status {
 
 impl_request_id!(Status);
 impl_packet_for!(Status);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{de, ser};
+
+    #[test]
+    fn known_status_codes_roundtrip() {
+        for code in 0..=8_u32 {
+            let bytes = ser::to_bytes(&StatusCode::from(code)).unwrap();
+            assert_eq!(bytes[..], code.to_be_bytes());
+        }
+    }
+
+    #[test]
+    fn unknown_status_code_is_failure() {
+        for code in [9, 31, 0x100, 0xFFFF_FFFE_u32] {
+            let mut bytes = ser::to_bytes(&(42_u32, code, "denied", "en-US")).unwrap();
+            let status: Status = de::from_bytes(&mut bytes).unwrap();
+
+            assert_eq!(status.id, 42);
+            assert_eq!(status.status_code, StatusCode::Failure);
+            assert_eq!(status.error_message, "denied");
+            assert_eq!(status.language_tag, "en-US");
+        }
+    }
+}

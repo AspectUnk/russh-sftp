@@ -1,19 +1,19 @@
 use std::{collections::VecDeque, sync::Arc};
 
 use super::Metadata;
-use crate::protocol::FileType;
+use crate::protocol::{FileType, SftpString};
 
 /// Entries returned by the [`ReadDir`] iterator.
 #[derive(Debug)]
 pub struct DirEntry {
-    parent: Arc<str>,
-    file: String,
+    parent: Arc<SftpString>,
+    file: SftpString,
     metadata: Metadata,
 }
 
 impl DirEntry {
     /// Returns the file name for the file that this entry points at.
-    pub fn file_name(&self) -> String {
+    pub fn file_name(&self) -> SftpString {
         self.file.to_owned()
     }
 
@@ -35,21 +35,19 @@ impl DirEntry {
     /// POSIX-style paths on the wire). No canonicalization is performed, so a
     /// relative input yields a relative result — mirroring the behaviour of
     /// [`std::fs::DirEntry::path`].
-    pub fn path(&self) -> String {
-        if self.parent.is_empty() {
-            self.file.clone()
-        } else if self.parent.ends_with('/') {
-            format!("{}{}", self.parent, self.file)
-        } else {
-            format!("{}/{}", self.parent, self.file)
-        }
+    pub fn path(&self) -> SftpString {
+        let mut path = SftpString::clone(&self.parent);
+        let has_separator = path.is_empty() || path.as_bytes().ends_with(b"/");
+        path.push_str(if has_separator { "" } else { "/" });
+        path.push_str(&self.file);
+        path
     }
 }
 
 /// Iterator over the entries in a remote directory.
 pub struct ReadDir {
-    pub(crate) parent: Arc<str>,
-    pub(crate) entries: VecDeque<(String, Metadata)>,
+    pub(crate) parent: Arc<SftpString>,
+    pub(crate) entries: VecDeque<(SftpString, Metadata)>,
 }
 
 impl Iterator for ReadDir {

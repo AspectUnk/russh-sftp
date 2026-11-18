@@ -189,7 +189,7 @@ impl From<u32> for FilePermissions {
 /// clients that can be displayed in longname. Can be omitted.
 ///
 /// The `flags` field is omitted because it is set by itself depending on the fields
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct FileAttributes {
     pub size: Option<u64>,
     pub uid: Option<u32>,
@@ -206,9 +206,8 @@ macro_rules! impl_fn_type {
         #[doc = "Returns `true` if is a "]
         #[doc = $doc_name]
         pub fn $get_name(&self) -> bool {
-            self.permissions.map_or(false, |b| {
-                FileMode::from_bits_truncate(b).contains(FileMode::$flag)
-            })
+            self.permissions
+                .is_some_and(|b| FileMode::from_bits_truncate(b) == FileMode::$flag)
         }
 
         #[doc = "Set flag if is a "]
@@ -231,16 +230,17 @@ impl FileAttributes {
     impl_fn_type!(is_block, set_block, "block", BLK);
     impl_fn_type!(is_fifo, set_fifo, "fifo", FIFO);
 
-    /// Set mode flag
+    /// Set file type, replacing the previous one
     pub fn set_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms | mode.bits());
+        self.permissions = Some(perms & !FileMode::all().bits() | mode.bits());
     }
 
-    /// Remove mode flag
+    /// Remove file type if it matches
     pub fn remove_type(&mut self, mode: FileMode) {
         let perms = self.permissions.unwrap_or(0);
-        self.permissions = Some(perms & !mode.bits());
+        let matches = FileMode::from_bits_truncate(perms) == mode;
+        self.permissions = Some(if matches { perms & !mode.bits() } else { perms });
     }
 
     /// Returns the file type
@@ -279,24 +279,13 @@ impl FileAttributes {
         }
     }
 
-    /// Creates a structure with omitted attributes
+    /// Creates a structure with omitted attributes. Same as [`Default`]
     pub fn empty() -> Self {
-        Self {
-            size: None,
-            uid: None,
-            user: None,
-            gid: None,
-            group: None,
-            permissions: None,
-            atime: None,
-            mtime: None,
-        }
+        Self::default()
     }
-}
 
-/// For packets which require dummy attributes
-impl Default for FileAttributes {
-    fn default() -> Self {
+    /// For packets which require dummy attributes
+    pub fn dummy() -> Self {
         Self {
             size: Some(0),
             uid: Some(0),
@@ -333,7 +322,8 @@ impl From<&Metadata> for FileAttributes {
         };
 
         attrs.set_dir(metadata.is_dir());
-        attrs.set_regular(!metadata.is_dir());
+        attrs.set_regular(metadata.is_file());
+        attrs.set_symlink(metadata.is_symlink());
 
         attrs
     }
@@ -414,7 +404,7 @@ impl<'de> Deserialize<'de> for FileAttributes {
             {
                 let attrs = FileAttr::from_bits_truncate(seq.next_element::<u32>()?.unwrap_or(0));
 
-                Ok(FileAttributes {
+                let file_attrs = FileAttributes {
                     size: if attrs.contains(FileAttr::SIZE) {
                         seq.next_element::<u64>()?
                     } else {
@@ -447,10 +437,49 @@ impl<'de> Deserialize<'de> for FileAttributes {
                     } else {
                         None
                     },
-                })
+                };
+
+                // Extended pairs are not exposed, only consumed
+                if attrs.contains(FileAttr::EXTENDED) {
+                    for _ in 0..seq.next_element::<u32>()?.unwrap_or(0) {
+                        seq.next_element::<(String, String)>()?;
+                    }
+                }
+
+                Ok(file_attrs)
             }
         }
 
         deserializer.deserialize_any(FileAttributesVisitor)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_type_is_exact() {
+        let mut attrs = FileAttributes {
+            permissions: Some(FileMode::SOCK.bits() | 0o644),
+            ..Default::default()
+        };
+        assert!(!attrs.is_dir() && !attrs.is_regular());
+
+        attrs.set_dir(false);
+        assert_eq!(attrs.permissions, Some(FileMode::SOCK.bits() | 0o644));
+
+        attrs.set_symlink(true);
+        assert!(attrs.is_symlink() && !attrs.is_regular() && !attrs.is_character());
+        assert_eq!(attrs.permissions, Some(FileMode::LNK.bits() | 0o644));
+    }
+
+    #[test]
+    fn metadata_keeps_file_type() {
+        let attrs = |path| FileAttributes::from(&std::fs::metadata(path).unwrap());
+        assert!(attrs(".").is_dir());
+        assert!(attrs("Cargo.toml").is_regular());
+        #[cfg(unix)]
+        assert!(attrs("/dev/null").is_character());
     }
 }

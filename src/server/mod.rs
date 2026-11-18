@@ -114,7 +114,10 @@ where
         loop {
             match process_handler(&mut stream, &mut handler, &cfg).await {
                 Err(Error::UnexpectedEof) => break,
-                Err(err) => warn!("{}", err),
+                Err(err) => {
+                    warn!("{}", err);
+                    break;
+                }
                 Ok(_) => (),
             }
         }

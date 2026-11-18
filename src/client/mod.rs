@@ -13,7 +13,7 @@ use bytes::Bytes;
 use tokio::{
     io::{self, AsyncRead, AsyncWrite, AsyncWriteExt},
     select,
-    sync::{mpsc, oneshot},
+    sync::mpsc,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -32,8 +32,12 @@ macro_rules! into_wrap {
 pub struct Config {
     /// Maximum size of a single packet in bytes. Default: 256 KiB.
     pub max_packet_len: u32,
-    /// Maximum number of concurrent in-flight write requests. Default: 8.
+    /// Maximum number of concurrent in-flight read requests. Default: 16.
+    pub max_concurrent_reads: usize,
+    /// Maximum number of concurrent in-flight write requests. Default: 16.
     pub max_concurrent_writes: usize,
+    /// Preferred maximum size of a framed write packet. Default: 32 KiB.
+    pub max_write_packet_len: u32,
     /// Timeout in seconds for each request. Default: 10.
     pub request_timeout_secs: u64,
 }
@@ -42,7 +46,9 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             max_packet_len: 262144,
-            max_concurrent_writes: 8,
+            max_concurrent_reads: 16,
+            max_concurrent_writes: 16,
+            max_write_packet_len: 32768,
             request_timeout_secs: 10,
         }
     }
@@ -66,27 +72,32 @@ where
     }
 }
 
-async fn process_handler<S, H>(stream: &mut S, handler: &mut H) -> Result<(), Error>
+async fn process_handler<S, H>(stream: &mut S, handler: &mut H, cfg: &Config) -> Result<(), Error>
 where
     S: AsyncRead + Unpin,
     H: Handler + Send,
 {
-    let mut bytes = read_packet(stream, u32::MAX).await?;
+    let mut bytes = read_packet(stream, cfg.max_packet_len).await?;
     Ok(execute_handler(&mut bytes, handler).await?)
 }
 
-/// A queued outgoing packet, paired with an optional notification that
-/// fires once the bytes have actually been handed to the socket.
-pub(crate) type WriteItem = (Bytes, Option<oneshot::Sender<()>>);
-
 /// Run processing stream as SFTP client. Is a simple handler of incoming
 /// and outgoing packets. Can be used for non-standard implementations
-pub fn run<S, H>(stream: S, mut handler: H) -> mpsc::UnboundedSender<WriteItem>
+pub fn run<S, H>(stream: S, handler: H) -> mpsc::UnboundedSender<Bytes>
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     H: Handler + Send + 'static,
 {
-    let (tx, mut rx) = mpsc::unbounded_channel::<WriteItem>();
+    run_with_config(stream, handler, Config::default())
+}
+
+/// Run processing stream as SFTP client with custom configuration
+pub fn run_with_config<S, H>(stream: S, mut handler: H, cfg: Config) -> mpsc::UnboundedSender<Bytes>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    H: Handler + Send + 'static,
+{
+    let (tx, mut rx) = mpsc::unbounded_channel::<Bytes>();
     let (mut rd, mut wr) = io::split(stream);
 
     let rc = CancellationToken::new();
@@ -95,10 +106,13 @@ where
         runtime::spawn(async move {
             loop {
                 select! {
-                    result = process_handler(&mut rd, &mut handler) => {
+                    result = process_handler(&mut rd, &mut handler, &cfg) => {
                         match result {
                             Err(Error::UnexpectedEof) => break,
-                            Err(err) => warn!("{}", err),
+                            Err(err) => {
+                                warn!("{}", err);
+                                break;
+                            },
                             Ok(_) => (),
                         }
                     },
@@ -114,19 +128,16 @@ where
     runtime::spawn(async move {
         loop {
             select! {
-                Some((data, sent)) = rx.recv() => {
+                data = rx.recv() => {
+                    let Some(data) = data else { break; };
                     if data.is_empty() {
                         let _ = wr.shutdown().await;
                         break;
                     }
 
-                    let _ = wr.write_all(&data[..]).await;
-
-                    // Signal that the packet has actually been handed to
-                    // the socket, so the caller can start its response
-                    // timeout from here rather than from enqueue time.
-                    if let Some(sent) = sent {
-                        let _ = sent.send(());
+                    if let Err(error) = wr.write_all(&data[..]).await {
+                        warn!("{}", error);
+                        break;
                     }
                 },
                 _ = wc.cancelled() => break,
